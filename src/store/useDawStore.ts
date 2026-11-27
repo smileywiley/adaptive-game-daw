@@ -13,7 +13,7 @@ import {
   StemId,
   TimeSignature,
 } from '../types/daw';
-import { createDefaultProject, MOOD_PRESETS } from '../presets/moodPresets';
+import { createBlankProject, createDefaultProject, MOOD_PRESETS } from '../presets/moodPresets';
 import {
   createNoteId,
   generateStemPatternForChords,
@@ -88,6 +88,7 @@ interface DawState {
   // Actions
   setPresetModalOpen: (open: boolean) => void;
   loadMoodPreset: (presetId: string) => void;
+  createBlankSong: () => void;
   importProjectJson: (jsonText: string) => { ok: boolean; error?: string };
   exportProjectJson: () => string;
 
@@ -153,6 +154,13 @@ function syncAudio(project: DawProject): void {
   }
 }
 
+function syncMixer(project: DawProject): void {
+  const section = project.sections.find((s) => s.id === project.activeSectionId) ?? project.sections[0];
+  if (section && audioEngine.isContextRunning()) {
+    audioEngine.updateMixer(section);
+  }
+}
+
 export const useDawStore = create<DawState>((set, get) => ({
   project: loadSavedProject(),
   activeStemId: '05_Lead_Melody',
@@ -187,6 +195,17 @@ export const useDawStore = create<DawState>((set, get) => ({
     const preset = MOOD_PRESETS.find((p) => p.id === presetId);
     if (!preset) return;
     const nextProject = preset.buildProject();
+    saveProjectToStorage(nextProject);
+    set((state) => ({
+      project: nextProject,
+      undoStack: [...state.undoStack.slice(-19), state.project.sections],
+      presetModalOpen: false,
+    }));
+    syncAudio(nextProject);
+  },
+
+  createBlankSong: () => {
+    const nextProject = createBlankProject();
     saveProjectToStorage(nextProject);
     set((state) => ({
       project: nextProject,
@@ -406,35 +425,51 @@ export const useDawStore = create<DawState>((set, get) => ({
     }));
     saveProjectToStorage(nextProject);
     set({ project: nextProject });
-    syncAudio(nextProject);
+    syncMixer(nextProject);
   },
 
   toggleStemMute: (stemId) => {
     const prev = get().project;
-    const nextProject = updateActiveSection(prev, (sec) => ({
-      ...sec,
-      stems: {
-        ...sec.stems,
-        [stemId]: { ...sec.stems[stemId], muted: !sec.stems[stemId].muted },
-      },
-    }));
+    const nextProject = updateActiveSection(prev, (sec) => {
+      const target = sec.stems[stemId];
+      const nextMuted = !target.muted;
+      return {
+        ...sec,
+        stems: {
+          ...sec.stems,
+          [stemId]: {
+            ...target,
+            muted: nextMuted,
+            solo: nextMuted ? false : target.solo,
+          },
+        },
+      };
+    });
     saveProjectToStorage(nextProject);
     set({ project: nextProject });
-    syncAudio(nextProject);
+    syncMixer(nextProject);
   },
 
   toggleStemSolo: (stemId) => {
     const prev = get().project;
-    const nextProject = updateActiveSection(prev, (sec) => ({
-      ...sec,
-      stems: {
-        ...sec.stems,
-        [stemId]: { ...sec.stems[stemId], solo: !sec.stems[stemId].solo },
-      },
-    }));
+    const nextProject = updateActiveSection(prev, (sec) => {
+      const target = sec.stems[stemId];
+      const nextSolo = !target.solo;
+      return {
+        ...sec,
+        stems: {
+          ...sec.stems,
+          [stemId]: {
+            ...target,
+            solo: nextSolo,
+            muted: nextSolo ? false : target.muted,
+          },
+        },
+      };
+    });
     saveProjectToStorage(nextProject);
     set({ project: nextProject });
-    syncAudio(nextProject);
+    syncMixer(nextProject);
   },
 
   addNotes: (stemId, newNotes) => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MOOD_PRESETS } from './moodPresets';
+import { createBlankProject, MOOD_PRESETS } from './moodPresets';
 import { INSTRUMENT_PRESETS } from '../audio/synthBank';
 import { STEM_ORDER } from '../types/daw';
 import { getBeatsPerBar } from '../theory/musicTheory';
@@ -9,6 +9,16 @@ describe('MOOD_PRESETS pack', () => {
 
   it('includes all 6 starter mood presets', () => {
     expect(MOOD_PRESETS.length).toBe(6);
+  });
+
+  it('creates a blank project with 0 notes across all 5 stems', () => {
+    const blank = createBlankProject();
+    expect(blank.presetId).toBe('blank');
+    const sec = blank.sections[0];
+    expect(sec.chords.length).toBe(sec.bars);
+    for (const stemId of STEM_ORDER) {
+      expect(sec.stems[stemId].notes.length).toBe(0);
+    }
   });
 
   for (const preset of MOOD_PRESETS) {
