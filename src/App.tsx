@@ -1,9 +1,11 @@
 import React from 'react';
 import { TransportBar } from './components/TransportBar';
 import { StemSidebar } from './components/StemSidebar';
+import { SectionTabsBar } from './components/SectionTabsBar';
 import { PianoRollToolbar } from './components/PianoRollToolbar';
 import { TheoryCoachBar } from './components/TheoryCoachBar';
 import { PianoRollCanvas } from './components/PianoRollCanvas';
+import { GameSimulatorPanel } from './components/GameSimulatorPanel';
 import { InputDock } from './components/InputDock';
 import { MoodPresetModal } from './components/MoodPresetModal';
 import { useQwertyInput } from './hooks/useQwertyInput';
@@ -22,10 +24,13 @@ export const App: React.FC = () => {
         <StemSidebar />
 
         <main className="flex-1 flex flex-col min-w-0 min-h-0">
+          <SectionTabsBar />
           <PianoRollToolbar />
           <TheoryCoachBar />
           <PianoRollCanvas />
         </main>
+
+        <GameSimulatorPanel />
       </div>
 
       <InputDock />

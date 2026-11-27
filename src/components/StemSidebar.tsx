@@ -11,6 +11,7 @@ export const StemSidebar: React.FC = () => {
   const setActiveStem = useDawStore((s) => s.setActiveStem);
   const setStemInstrument = useDawStore((s) => s.setStemInstrument);
   const setStemVolume = useDawStore((s) => s.setStemVolume);
+  const setStemIntensityRange = useDawStore((s) => s.setStemIntensityRange);
   const toggleStemMute = useDawStore((s) => s.toggleStemMute);
   const toggleStemSolo = useDawStore((s) => s.toggleStemSolo);
   const autoFillStemFromChords = useDawStore((s) => s.autoFillStemFromChords);
@@ -61,7 +62,7 @@ export const StemSidebar: React.FC = () => {
                       {stem.name}
                     </div>
                     <div className="text-[10px] text-zinc-500 font-mono">
-                      {stem.notes.length} notes · Int {Math.round(stem.intensityMin * 100)}%
+                      {stem.notes.length} notes · Int ≥{Math.round(stem.intensityMin * 100)}%
                     </div>
                   </div>
                 </div>
@@ -128,7 +129,7 @@ export const StemSidebar: React.FC = () => {
 
               {/* Volume Slider */}
               <div
-                className="flex items-center gap-2 mb-2"
+                className="flex items-center gap-2 mb-1.5"
                 onClick={(e) => e.stopPropagation()}
               >
                 {stem.muted ? (
@@ -147,6 +148,27 @@ export const StemSidebar: React.FC = () => {
                 />
                 <span className="text-[10px] font-mono text-zinc-400 w-8 text-right">
                   {stem.volumeDb}dB
+                </span>
+              </div>
+
+              {/* Vertical Intensity Entry Threshold */}
+              <div
+                className="flex items-center gap-2 mb-2"
+                onClick={(e) => e.stopPropagation()}
+                title="Intensity threshold where this stem fades in during Game State Simulation"
+              >
+                <span className="text-[9px] uppercase text-zinc-500 w-7 shrink-0">Int≥</span>
+                <input
+                  type="range"
+                  min={0}
+                  max={0.9}
+                  step={0.05}
+                  value={stem.intensityMin}
+                  onChange={(e) => setStemIntensityRange(stemId, Number(e.target.value), stem.intensityMax)}
+                  className="w-full h-1 accent-emerald-500 cursor-pointer"
+                />
+                <span className="text-[10px] font-mono text-emerald-400 w-8 text-right">
+                  {Math.round(stem.intensityMin * 100)}%
                 </span>
               </div>
 
