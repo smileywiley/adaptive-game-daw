@@ -119,10 +119,11 @@ function createDrumKitWrapper(presetId: InstrumentPresetId, destination: Tone.To
     envelope: { attack: 0.002, decay: isIndustrial ? 0.2 : 0.11, sustain: 0, release: 0.08 },
   }).connect(snareFilter);
 
+  const clapFilter = new Tone.Filter(2400, 'highpass').connect(output);
   const clap = new Tone.NoiseSynth({
     noise: { type: 'white' },
     envelope: { attack: 0.005, decay: 0.09, sustain: 0, release: 0.05 },
-  }).connect(new Tone.Filter(2400, 'highpass').connect(output));
+  }).connect(clapFilter);
 
   const hatFilter = new Tone.Filter(7500, 'highpass').connect(output);
   const closedHat = new Tone.NoiseSynth({
@@ -144,10 +145,11 @@ function createDrumKitWrapper(presetId: InstrumentPresetId, destination: Tone.To
   }).connect(output);
   perc.volume.value = -10;
 
+  const crashFilter = new Tone.Filter(5200, 'highpass').connect(output);
   const crash = new Tone.NoiseSynth({
     noise: { type: 'white' },
     envelope: { attack: 0.005, decay: 0.65, sustain: 0, release: 0.3 },
-  }).connect(new Tone.Filter(5200, 'highpass').connect(output));
+  }).connect(crashFilter);
   crash.volume.value = -8;
 
   const triggerHit = (midi: number, time?: number, velocity = 0.8) => {
@@ -183,11 +185,13 @@ function createDrumKitWrapper(presetId: InstrumentPresetId, destination: Tone.To
       snare.dispose();
       snareFilter.dispose();
       clap.dispose();
+      clapFilter.dispose();
       closedHat.dispose();
       openHat.dispose();
       hatFilter.dispose();
       perc.dispose();
       crash.dispose();
+      crashFilter.dispose();
       output.dispose();
     },
   };

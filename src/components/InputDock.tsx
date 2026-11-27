@@ -1,5 +1,5 @@
 import React from 'react';
-import { Keyboard, Minus, Plus, Usb } from 'lucide-react';
+import { Keyboard, Minus, Plus, Usb, VolumeX } from 'lucide-react';
 import { useDawStore } from '../store/useDawStore';
 import { SCALE_LOCK_KEYS } from '../hooks/useQwertyInput';
 import {
@@ -10,7 +10,7 @@ import {
   scaleDegreeToMidi,
 } from '../theory/musicTheory';
 import { audioEngine } from '../audio/audioEngine';
-import { DRUM_LANES } from '../types/daw';
+import { DRUM_LANES, STEM_ORDER } from '../types/daw';
 
 export const InputDock: React.FC = () => {
   const section = useDawStore((s) => s.getActiveSection());
@@ -23,6 +23,8 @@ export const InputDock: React.FC = () => {
   const markAudioUnlocked = useDawStore((s) => s.markAudioUnlocked);
 
   const activeStem = section.stems[activeStemId];
+  const anySolo = STEM_ORDER.some((id) => section.stems[id].solo);
+  const isStemSilenced = anySolo ? !activeStem.solo : activeStem.muted;
   const chords = getScaleChordOptions(section.root, section.scaleId).slice(0, 8);
 
   const triggerChord = (idx: number) => {
@@ -45,12 +47,23 @@ export const InputDock: React.FC = () => {
         <div className="flex items-center gap-1.5 text-xs text-zinc-300">
           <Keyboard className="w-4 h-4 text-amber-400" />
           <div>
-            <div className="font-semibold leading-tight">
-              {activeStem.isDrum
-                ? 'Drum Pads (A–J)'
-                : scaleLock
-                  ? 'Scale-Lock Keys (A–;)'
-                  : 'QWERTY Keys (Z–M / Q–I)'}
+            <div className="font-semibold leading-tight flex items-center gap-1.5">
+              <span>
+                {activeStem.isDrum
+                  ? 'Drum Pads (A–J)'
+                  : scaleLock
+                    ? 'Scale-Lock Keys (A–;)'
+                    : 'QWERTY Keys (Z–M / Q–I)'}
+              </span>
+              {isStemSilenced && (
+                <span
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-rose-500/20 border border-rose-500/40 text-rose-300 text-[9px] font-semibold"
+                  title="Unmute this stem (or clear Solo on other stems) to hear live keys"
+                >
+                  <VolumeX className="w-2.5 h-2.5" />
+                  Stem Muted
+                </span>
+              )}
             </div>
             <div className="text-[10px] text-zinc-500">
               {midiDevices.length > 0 ? (

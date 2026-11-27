@@ -17,15 +17,20 @@ class DawAudioEngine {
   private loopBeats = 16;
   private currentBpm = 110;
 
-  async ensureStarted(): Promise<boolean> {
-    if (Tone.getContext().state !== 'running') {
-      await Tone.start();
-    }
-    if (!this.initialized) {
+  private ensureMasterBus(): Tone.Volume {
+    if (!this.initialized || !this.masterGain) {
       this.masterLimiter = new Tone.Limiter(-1.5).toDestination();
       this.masterGain = new Tone.Volume(-2).connect(this.masterLimiter);
       this.initialized = true;
     }
+    return this.masterGain;
+  }
+
+  async ensureStarted(): Promise<boolean> {
+    if (Tone.getContext().state !== 'running') {
+      await Tone.start();
+    }
+    this.ensureMasterBus();
     return Tone.getContext().state === 'running';
   }
 
@@ -34,11 +39,7 @@ class DawAudioEngine {
   }
 
   private getOrCreateVoice(stemId: StemId, presetId: InstrumentPresetId): SynthVoiceWrapper {
-    if (!this.initialized || !this.masterGain) {
-      this.masterLimiter = new Tone.Limiter(-1.5).toDestination();
-      this.masterGain = new Tone.Volume(-2).connect(this.masterLimiter);
-      this.initialized = true;
-    }
+    const master = this.ensureMasterBus();
     const existing = this.voices[stemId];
     if (existing && existing.presetId === presetId) {
       return existing;
@@ -47,22 +48,18 @@ class DawAudioEngine {
       existing.releaseAll();
       existing.dispose();
     }
-    const voice = createInstrumentVoice(presetId, this.masterGain);
+    const voice = createInstrumentVoice(presetId, master);
     this.voices[stemId] = voice;
     return voice;
   }
 
   private getOrCreatePreviewVoice(): Tone.PolySynth {
-    if (!this.initialized || !this.masterGain) {
-      this.masterLimiter = new Tone.Limiter(-1.5).toDestination();
-      this.masterGain = new Tone.Volume(-2).connect(this.masterLimiter);
-      this.initialized = true;
-    }
+    const master = this.ensureMasterBus();
     if (!this.previewVoice) {
       this.previewVoice = new Tone.PolySynth(Tone.Synth, {
         oscillator: { type: 'triangle' },
         envelope: { attack: 0.015, decay: 0.25, sustain: 0.35, release: 0.4 },
-      }).connect(this.masterGain);
+      }).connect(master);
       this.previewVoice.volume.value = -8;
       this.previewVoice.maxPolyphony = 12;
     }
@@ -163,7 +160,7 @@ class DawAudioEngine {
   /** Returns current playhead position in quarter-note beats within the active loop. */
   getCurrentBeat(): number {
     const transport = Tone.getTransport();
-    if (transport.state !== 'started') return 0;
+    if (transport.state === 'stopped') return 0;
     const sec = transport.seconds;
     const beats = (sec * this.currentBpm) / 60;
     if (this.loopBeats <= 0) return 0;

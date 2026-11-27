@@ -23,14 +23,28 @@ type DragMode =
   | null
   | { type: 'draw'; midi: number; startBeat: number; endBeat: number }
   | { type: 'arp'; lastStepBeat: number; arpIndex: number }
-  | { type: 'move'; noteId: string; offsetBeat: number; origDuration: number; origVelocity: number }
-  | { type: 'resize'; noteId: string; startBeat: number }
+  | {
+      type: 'move';
+      noteId: string;
+      offsetBeat: number;
+      lastBeat: number;
+      lastMidi: number;
+      didMutate: boolean;
+    }
+  | {
+      type: 'resize';
+      noteId: string;
+      startBeat: number;
+      lastDur: number;
+      didMutate: boolean;
+    }
   | { type: 'erase' };
 
 export const PianoRollCanvas: React.FC = () => {
   const project = useDawStore((s) => s.project);
   const section = useDawStore((s) => s.getActiveSection());
   const activeStemId = useDawStore((s) => s.activeStemId);
+  const isPlaying = useDawStore((s) => s.isPlaying);
   const tool = useDawStore((s) => s.tool);
   const quantizeGrid = useDawStore((s) => s.quantizeGrid);
   const scaleLock = useDawStore((s) => s.scaleLock);
@@ -40,6 +54,8 @@ export const PianoRollCanvas: React.FC = () => {
   const addNotes = useDawStore((s) => s.addNotes);
   const updateNote = useDawStore((s) => s.updateNote);
   const removeNote = useDawStore((s) => s.removeNote);
+  const pushUndoSnapshot = useDawStore((s) => s.pushUndoSnapshot);
+  const commitProjectChanges = useDawStore((s) => s.commitProjectChanges);
   const markAudioUnlocked = useDawStore((s) => s.markAudioUnlocked);
 
   const activeStem = section.stems[activeStemId];
@@ -61,6 +77,12 @@ export const PianoRollCanvas: React.FC = () => {
     return all;
   }, [activeStem.isDrum, foldToScale, section.root, section.scaleId]);
 
+  const midiToRowIdx = useMemo(() => {
+    const map = new Map<number, number>();
+    displayedMidis.forEach((m, idx) => map.set(m, idx));
+    return map;
+  }, [displayedMidis]);
+
   const rowHeight = activeStem.isDrum ? DRUM_ROW_HEIGHT : MELODIC_ROW_HEIGHT;
   const contentHeight = displayedMidis.length * rowHeight;
 
@@ -71,8 +93,10 @@ export const PianoRollCanvas: React.FC = () => {
   const [viewport, setViewport] = useState({ width: 900, height: 420 });
   const dragRef = useRef<DragMode>(null);
   const hoverBarRef = useRef<number>(0);
+  const layoutRef = useRef({ displayedMidis, rowHeight });
+  layoutRef.current = { displayedMidis, rowHeight };
 
-  // Center vertically around C4 on initial mount or stem switch
+  // Center vertically around C4 on initial mount or stem/fold switch
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
@@ -80,9 +104,10 @@ export const PianoRollCanvas: React.FC = () => {
       el.scrollTop = 0;
       setScrollTop(0);
     } else {
+      const { displayedMidis: rows, rowHeight: rh } = layoutRef.current;
       const targetMidi = activeStemId === '03_Bass' ? 45 : 64;
-      const idx = displayedMidis.findIndex((m) => m <= targetMidi);
-      const y = Math.max(0, (idx >= 0 ? idx : 16) * rowHeight - el.clientHeight / 2);
+      const idx = rows.findIndex((m) => m <= targetMidi);
+      const y = Math.max(0, (idx >= 0 ? idx : 16) * rh - el.clientHeight / 2);
       el.scrollTop = y;
       setScrollTop(y);
     }
@@ -132,26 +157,19 @@ export const PianoRollCanvas: React.FC = () => {
     [displayedMidis, rowHeight, scrollLeft, scrollTop],
   );
 
-  // Main 60 FPS Canvas Render Loop
-  useEffect(() => {
-    let rafId = 0;
+  const renderCanvas = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const dpr = window.devicePixelRatio || 1;
+    const w = viewport.width;
+    const h = viewport.height;
+    if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
+      canvas.width = Math.floor(w * dpr);
+      canvas.height = Math.floor(h * dpr);
+    }
 
-    const render = () => {
-      const canvas = canvasRef.current;
-      if (!canvas) {
-        rafId = requestAnimationFrame(render);
-        return;
-      }
-      const dpr = window.devicePixelRatio || 1;
-      const w = viewport.width;
-      const h = viewport.height;
-      if (canvas.width !== Math.floor(w * dpr) || canvas.height !== Math.floor(h * dpr)) {
-        canvas.width = Math.floor(w * dpr);
-        canvas.height = Math.floor(h * dpr);
-      }
-
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
 
       ctx.save();
       ctx.scale(dpr, dpr);
@@ -243,7 +261,7 @@ export const PianoRollCanvas: React.FC = () => {
           if (other.isDrum || other.muted) continue;
           ctx.fillStyle = `${other.color}26`;
           for (const n of other.notes) {
-            const rowIdx = displayedMidis.indexOf(n.midi);
+            const rowIdx = midiToRowIdx.get(n.midi) ?? -1;
             if (rowIdx === -1) continue;
             const nx = KEY_GUTTER_WIDTH + n.startBeat * BEAT_WIDTH_PX - scrollLeft;
             const ny = rowIdx * rowHeight - scrollTop + 2;
@@ -255,7 +273,7 @@ export const PianoRollCanvas: React.FC = () => {
 
       // Active stem notes
       for (const n of activeStem.notes) {
-        const rowIdx = displayedMidis.indexOf(n.midi);
+        const rowIdx = midiToRowIdx.get(n.midi) ?? -1;
         if (rowIdx === -1) continue;
         const nx = KEY_GUTTER_WIDTH + n.startBeat * BEAT_WIDTH_PX - scrollLeft;
         const ny = rowIdx * rowHeight - scrollTop + 2;
@@ -295,7 +313,7 @@ export const PianoRollCanvas: React.FC = () => {
       // Drag preview for Pen tool
       if (dragRef.current?.type === 'draw') {
         const d = dragRef.current;
-        const rowIdx = displayedMidis.indexOf(d.midi);
+        const rowIdx = midiToRowIdx.get(d.midi) ?? -1;
         if (rowIdx !== -1) {
           const start = Math.min(d.startBeat, d.endBeat);
           const dur = Math.max(quantizeGrid, Math.abs(d.endBeat - d.startBeat) + quantizeGrid);
@@ -404,16 +422,12 @@ export const PianoRollCanvas: React.FC = () => {
       ctx.stroke();
 
       ctx.restore();
-      rafId = requestAnimationFrame(render);
-    };
-
-    rafId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(rafId);
   }, [
     viewport,
     scrollLeft,
     scrollTop,
     displayedMidis,
+    midiToRowIdx,
     rowHeight,
     section,
     activeStem,
@@ -424,6 +438,19 @@ export const PianoRollCanvas: React.FC = () => {
     quantizeGrid,
     activeLiveMidis,
   ]);
+
+  // Render on-demand when idle; run 60 FPS playhead loop only while playing
+  useEffect(() => {
+    renderCanvas();
+    if (!isPlaying) return;
+    let rafId = 0;
+    const tick = () => {
+      renderCanvas();
+      rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
+  }, [renderCanvas, isPlaying]);
 
   const handlePointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const pos = clientToGrid(e.clientX, e.clientY);
@@ -458,15 +485,23 @@ export const PianoRollCanvas: React.FC = () => {
 
     if (tool === 'select') {
       if (hit) {
+        pushUndoSnapshot();
         if (hit.isRightEdge) {
-          dragRef.current = { type: 'resize', noteId: hit.note.id, startBeat: hit.note.startBeat };
+          dragRef.current = {
+            type: 'resize',
+            noteId: hit.note.id,
+            startBeat: hit.note.startBeat,
+            lastDur: hit.note.durationBeats,
+            didMutate: false,
+          };
         } else {
           dragRef.current = {
             type: 'move',
             noteId: hit.note.id,
             offsetBeat: pos.beat - hit.note.startBeat,
-            origDuration: hit.note.durationBeats,
-            origVelocity: hit.note.velocity,
+            lastBeat: hit.note.startBeat,
+            lastMidi: hit.note.midi,
+            didMutate: false,
           };
         }
       }
@@ -486,10 +521,17 @@ export const PianoRollCanvas: React.FC = () => {
       return;
     }
 
-    // Pen tool: if clicking existing note right edge, resize; if clicking existing note body, delete on Alt or move; else draw
+    // Pen tool: if clicking existing note right edge, resize; if clicking existing note body, delete; else draw
     if (hit) {
       if (hit.isRightEdge) {
-        dragRef.current = { type: 'resize', noteId: hit.note.id, startBeat: hit.note.startBeat };
+        pushUndoSnapshot();
+        dragRef.current = {
+          type: 'resize',
+          noteId: hit.note.id,
+          startBeat: hit.note.startBeat,
+          lastDur: hit.note.durationBeats,
+          didMutate: false,
+        };
       } else {
         removeNote(activeStemId, hit.note.id);
       }
@@ -508,13 +550,18 @@ export const PianoRollCanvas: React.FC = () => {
       startBeat: snappedBeat,
       endBeat: snappedBeat,
     };
+    renderCanvas();
   };
 
   const handlePointerMove = (e: React.PointerEvent<HTMLCanvasElement>) => {
     const pos = clientToGrid(e.clientX, e.clientY);
     if (!pos) return;
     if (!pos.inGutter && pos.beat >= 0 && pos.beat < totalBeats) {
-      hoverBarRef.current = Math.min(section.bars - 1, Math.floor(pos.beat / beatsPerBar));
+      const nextHoverBar = Math.min(section.bars - 1, Math.floor(pos.beat / beatsPerBar));
+      if (nextHoverBar !== hoverBarRef.current) {
+        hoverBarRef.current = nextHoverBar;
+        if (!isPlaying) renderCanvas();
+      }
     }
 
     const drag = dragRef.current;
@@ -526,7 +573,10 @@ export const PianoRollCanvas: React.FC = () => {
     );
 
     if (drag.type === 'draw') {
-      drag.endBeat = snappedBeat;
+      if (drag.endBeat !== snappedBeat) {
+        drag.endBeat = snappedBeat;
+        renderCanvas();
+      }
     } else if (drag.type === 'erase') {
       const hit = hitTestNote(pos.beat, pos.rawMidi);
       if (hit) removeNote(activeStemId, hit.note.id);
@@ -535,7 +585,11 @@ export const PianoRollCanvas: React.FC = () => {
         quantizeGrid,
         Math.round((pos.beat - drag.startBeat) / quantizeGrid) * quantizeGrid,
       );
-      updateNote(activeStemId, drag.noteId, { durationBeats: nextDur });
+      if (nextDur !== drag.lastDur) {
+        drag.lastDur = nextDur;
+        drag.didMutate = true;
+        updateNote(activeStemId, drag.noteId, { durationBeats: nextDur }, false);
+      }
     } else if (drag.type === 'move') {
       const nextBeat = Math.max(
         0,
@@ -548,7 +602,12 @@ export const PianoRollCanvas: React.FC = () => {
         !activeStem.isDrum && scaleLock && !e.altKey
           ? snapMidiToScale(pos.rawMidi, section.root, section.scaleId)
           : pos.rawMidi;
-      updateNote(activeStemId, drag.noteId, { startBeat: nextBeat, midi: nextMidi });
+      if (nextBeat !== drag.lastBeat || nextMidi !== drag.lastMidi) {
+        drag.lastBeat = nextBeat;
+        drag.lastMidi = nextMidi;
+        drag.didMutate = true;
+        updateNote(activeStemId, drag.noteId, { startBeat: nextBeat, midi: nextMidi }, false);
+      }
     } else if (drag.type === 'arp' && !activeStem.isDrum) {
       if (snappedBeat !== drag.lastStepBeat) {
         const bar = Math.min(section.bars - 1, Math.floor(snappedBeat / beatsPerBar));
@@ -583,8 +642,11 @@ export const PianoRollCanvas: React.FC = () => {
           velocity: 0.85,
         },
       ]);
+    } else if ((drag?.type === 'move' || drag?.type === 'resize') && drag.didMutate) {
+      commitProjectChanges();
     }
     dragRef.current = null;
+    renderCanvas();
   };
 
   return (

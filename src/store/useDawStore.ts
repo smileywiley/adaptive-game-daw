@@ -25,12 +25,34 @@ import { audioEngine } from '../audio/audioEngine';
 
 const STORAGE_KEY = 'theory_daw_project_v1';
 
+function isValidDawProject(value: unknown): value is DawProject {
+  if (!value || typeof value !== 'object') return false;
+  const p = value as Partial<DawProject>;
+  if (typeof p.bpm !== 'number' || !Number.isFinite(p.bpm)) return false;
+  if (p.timeSignature !== '4/4' && p.timeSignature !== '3/4' && p.timeSignature !== '5/4') {
+    return false;
+  }
+  if (typeof p.activeSectionId !== 'string' || !Array.isArray(p.sections) || p.sections.length === 0) {
+    return false;
+  }
+  return p.sections.every((sec) => {
+    if (!sec || typeof sec !== 'object') return false;
+    if (typeof sec.bars !== 'number' || sec.bars < 1 || !Array.isArray(sec.chords) || !sec.stems) {
+      return false;
+    }
+    return STEM_ORDER.every((sid) => {
+      const stem = sec.stems[sid];
+      return Boolean(stem && Array.isArray(stem.notes) && typeof stem.instrumentId === 'string');
+    });
+  });
+}
+
 function loadSavedProject(): DawProject {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return createDefaultProject();
-    const parsed = JSON.parse(raw) as DawProject;
-    if (parsed && Array.isArray(parsed.sections) && parsed.sections.length > 0) {
+    const parsed: unknown = JSON.parse(raw);
+    if (isValidDawProject(parsed)) {
       return parsed;
     }
   } catch {
@@ -124,8 +146,10 @@ interface DawState {
 
   // Notes
   addNotes: (stemId: StemId, notes: Omit<MidiNote, 'id'>[]) => void;
-  updateNote: (stemId: StemId, noteId: string, patch: Partial<MidiNote>) => void;
+  updateNote: (stemId: StemId, noteId: string, patch: Partial<MidiNote>, commit?: boolean) => void;
   removeNote: (stemId: StemId, noteId: string) => void;
+  pushUndoSnapshot: () => void;
+  commitProjectChanges: () => void;
   undo: () => void;
 
   // Live input feedback
@@ -217,12 +241,18 @@ export const useDawStore = create<DawState>((set, get) => ({
 
   importProjectJson: (jsonText) => {
     try {
-      const parsed = JSON.parse(jsonText) as DawProject;
-      if (!parsed || !Array.isArray(parsed.sections) || parsed.sections.length === 0) {
-        return { ok: false, error: 'Invalid project file: missing sections.' };
+      const parsed: unknown = JSON.parse(jsonText);
+      if (!isValidDawProject(parsed)) {
+        return {
+          ok: false,
+          error: 'Invalid project file: missing required sections, chords, or stems.',
+        };
       }
       saveProjectToStorage(parsed);
-      set({ project: parsed });
+      set((state) => ({
+        project: parsed,
+        undoStack: [...state.undoStack.slice(-19), state.project.sections],
+      }));
       syncAudio(parsed);
       return { ok: true };
     } catch {
@@ -232,7 +262,13 @@ export const useDawStore = create<DawState>((set, get) => ({
 
   exportProjectJson: () => JSON.stringify(get().project, null, 2),
 
-  setActiveStem: (stemId) => set({ activeStemId: stemId }),
+  setActiveStem: (stemId) =>
+    set((state) => {
+      const section = state.getActiveSection();
+      const targetStem = section.stems[stemId];
+      const nextTool = targetStem?.isDrum && state.tool === 'arp' ? 'pen' : state.tool;
+      return { activeStemId: stemId, tool: nextTool };
+    }),
 
   setBpm: (bpm) => {
     const clamped = Math.max(50, Math.min(220, Math.round(bpm)));
@@ -505,7 +541,7 @@ export const useDawStore = create<DawState>((set, get) => ({
     syncAudio(nextProject);
   },
 
-  updateNote: (stemId, noteId, patch) => {
+  updateNote: (stemId, noteId, patch, commit = true) => {
     const prev = get().project;
     const nextProject = updateActiveSection(prev, (sec) => ({
       ...sec,
@@ -517,9 +553,22 @@ export const useDawStore = create<DawState>((set, get) => ({
         },
       },
     }));
-    saveProjectToStorage(nextProject);
     set({ project: nextProject });
-    syncAudio(nextProject);
+    if (commit) {
+      saveProjectToStorage(nextProject);
+      syncAudio(nextProject);
+    }
+  },
+
+  pushUndoSnapshot: () =>
+    set((state) => ({
+      undoStack: [...state.undoStack.slice(-19), state.project.sections],
+    })),
+
+  commitProjectChanges: () => {
+    const project = get().project;
+    saveProjectToStorage(project);
+    syncAudio(project);
   },
 
   removeNote: (stemId, noteId) => {
