@@ -7,7 +7,7 @@ import {
   getScaleChordOptions,
   scaleDegreeToMidi,
 } from '../theory/musicTheory';
-import { DRUM_LANES } from '../types/daw';
+import { DRUM_LANES, StemId } from '../types/daw';
 
 // Scale-Lock row: A S D F G H J K L ; maps directly to degrees 1..10 of the active scale
 export const SCALE_LOCK_KEYS = ['a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';'] as const;
@@ -17,7 +17,7 @@ const LOWER_ROW_KEYS = ['z', 'x', 'c', 'v', 'b', 'n', 'm'] as const;
 const UPPER_ROW_KEYS = ['q', 'w', 'e', 'r', 't', 'y', 'u', 'i'] as const;
 
 export function useQwertyInput(): void {
-  const heldKeyToMidis = useRef<Map<string, number[]>>(new Map());
+  const heldKeyToNotes = useRef<Map<string, { stemId: StemId; midis: number[] }>>(new Map());
 
   useEffect(() => {
     const isTypingInInput = (target: EventTarget | null): boolean => {
@@ -80,7 +80,7 @@ export function useQwertyInput(): void {
         const chord = chords[idx % chords.length];
         if (!chord) return;
         const midis = getChordMidiVoicing(chord, Math.max(3, state.qwertyOctave - 1));
-        heldKeyToMidis.current.set(key, midis);
+        heldKeyToNotes.current.set(key, { stemId: stem.id, midis });
         for (const m of midis) {
           void audioEngine.noteOn(stem.id, stem.instrumentId, m, 0.72);
           state.addLiveMidi(m);
@@ -96,7 +96,7 @@ export function useQwertyInput(): void {
         if (drumIdx !== -1 && drumIdx < DRUM_LANES.length) {
           // Reverse so A = Kick, S = Snare, D = Clap, etc.
           const lane = DRUM_LANES[DRUM_LANES.length - 1 - drumIdx];
-          heldKeyToMidis.current.set(key, [lane.midi]);
+          heldKeyToNotes.current.set(key, { stemId: stem.id, midis: [lane.midi] });
           void audioEngine.noteOn(stem.id, stem.instrumentId, lane.midi, 0.9);
           state.addLiveMidi(lane.midi);
           state.markAudioUnlocked();
@@ -138,7 +138,7 @@ export function useQwertyInput(): void {
       }
 
       if (resolvedMidi !== null) {
-        heldKeyToMidis.current.set(key, [resolvedMidi]);
+        heldKeyToNotes.current.set(key, { stemId: stem.id, midis: [resolvedMidi] });
         void audioEngine.noteOn(stem.id, stem.instrumentId, resolvedMidi, 0.85);
         state.addLiveMidi(resolvedMidi);
         state.markAudioUnlocked();
@@ -148,25 +148,25 @@ export function useQwertyInput(): void {
 
     const handleKeyUp = (e: KeyboardEvent) => {
       const key = e.key.toLowerCase();
-      const midis = heldKeyToMidis.current.get(key);
-      if (!midis) return;
-      heldKeyToMidis.current.delete(key);
+      const entry = heldKeyToNotes.current.get(key);
+      if (!entry) return;
+      heldKeyToNotes.current.delete(key);
       const state = useDawStore.getState();
-      for (const m of midis) {
-        audioEngine.noteOff(state.activeStemId, m);
+      for (const m of entry.midis) {
+        audioEngine.noteOff(entry.stemId, m);
         state.removeLiveMidi(m);
       }
     };
 
     const handleBlur = () => {
       const state = useDawStore.getState();
-      for (const midis of heldKeyToMidis.current.values()) {
-        for (const m of midis) {
-          audioEngine.noteOff(state.activeStemId, m);
+      for (const entry of heldKeyToNotes.current.values()) {
+        for (const m of entry.midis) {
+          audioEngine.noteOff(entry.stemId, m);
           state.removeLiveMidi(m);
         }
       }
-      heldKeyToMidis.current.clear();
+      heldKeyToNotes.current.clear();
     };
 
     window.addEventListener('keydown', handleKeyDown);

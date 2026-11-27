@@ -3,6 +3,7 @@ import { WebMidi, Input, NoteMessageEvent } from 'webmidi';
 import { useDawStore } from '../store/useDawStore';
 import { audioEngine } from '../audio/audioEngine';
 import { getBeatsPerBar, mapMidiKeyWithScaleLock } from '../theory/musicTheory';
+import { StemId } from '../types/daw';
 
 /**
  * Mini USB MIDI Keyboard integration via WebMidi.js.
@@ -11,7 +12,7 @@ import { getBeatsPerBar, mapMidiKeyWithScaleLock } from '../theory/musicTheory';
  * - Supports velocity-sensitive live audition and real-time quantized recording when armed.
  */
 export function useMidiInput(): void {
-  const activeHardwareNotes = useRef<Map<number, number>>(new Map());
+  const activeHardwareNotes = useRef<Map<number, { stemId: StemId; midi: number }>>(new Map());
 
   useEffect(() => {
     let mounted = true;
@@ -45,7 +46,7 @@ export function useMidiInput(): void {
             ? mapMidiKeyWithScaleLock(rawMidi, section.root, section.scaleId, 3)
             : rawMidi;
 
-        activeHardwareNotes.current.set(rawMidi, resolvedMidi);
+        activeHardwareNotes.current.set(rawMidi, { stemId: stem.id, midi: resolvedMidi });
         void audioEngine.noteOn(stem.id, stem.instrumentId, resolvedMidi, velocity);
         state.addLiveMidi(resolvedMidi);
         state.markAudioUnlocked();
@@ -69,12 +70,12 @@ export function useMidiInput(): void {
 
       input.addListener('noteoff', (e: NoteMessageEvent) => {
         const rawMidi = e.note.number;
-        const resolvedMidi = activeHardwareNotes.current.get(rawMidi);
-        if (resolvedMidi === undefined) return;
+        const entry = activeHardwareNotes.current.get(rawMidi);
+        if (!entry) return;
         activeHardwareNotes.current.delete(rawMidi);
         const state = useDawStore.getState();
-        audioEngine.noteOff(state.activeStemId, resolvedMidi);
-        state.removeLiveMidi(resolvedMidi);
+        audioEngine.noteOff(entry.stemId, entry.midi);
+        state.removeLiveMidi(entry.midi);
       });
     };
 
