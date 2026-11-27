@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sparkles, X } from 'lucide-react';
+import { FilePlus2, Sparkles, X } from 'lucide-react';
 import { MOOD_PRESETS } from '../presets/moodPresets';
 import { useDawStore } from '../store/useDawStore';
 import { pitchClassName, SCALES } from '../theory/musicTheory';
@@ -9,13 +9,14 @@ export const MoodPresetModal: React.FC = () => {
   const currentPresetId = useDawStore((s) => s.project.presetId);
   const setPresetModalOpen = useDawStore((s) => s.setPresetModalOpen);
   const loadMoodPreset = useDawStore((s) => s.loadMoodPreset);
+  const createBlankSong = useDawStore((s) => s.createBlankSong);
 
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl max-w-4xl w-full max-h-[88vh] flex flex-col overflow-hidden">
-        <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+        <div className="px-5 py-4 border-b border-zinc-800 flex items-center justify-between gap-3">
           <div className="flex items-center gap-2.5">
             <Sparkles className="w-5 h-5 text-amber-400" />
             <div>
@@ -27,12 +28,22 @@ export const MoodPresetModal: React.FC = () => {
               </p>
             </div>
           </div>
-          <button
-            onClick={() => setPresetModalOpen(false)}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
-          >
-            <X className="w-4 h-4" />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={createBlankSong}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-600 text-xs font-semibold text-zinc-100 transition cursor-pointer"
+              title="Start from scratch with 0 notes across all 5 stems"
+            >
+              <FilePlus2 className="w-3.5 h-3.5 text-cyan-400" />
+              Start Blank Song
+            </button>
+            <button
+              onClick={() => setPresetModalOpen(false)}
+              className="p-1.5 rounded-lg text-zinc-400 hover:text-zinc-100 hover:bg-zinc-800 cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
         </div>
 
         <div className="p-5 grid grid-cols-1 md:grid-cols-2 gap-3.5 overflow-y-auto">

@@ -433,3 +433,31 @@ export const MOOD_PRESETS: MoodPresetDefinition[] = [
 export function createDefaultProject(): DawProject {
   return MOOD_PRESETS[0].buildProject();
 }
+
+export function createBlankProject(): DawProject {
+  const blankChords: ChordEvent[] = [
+    { bar: 0, root: 0, quality: 'min', romanNumeral: 'i', tensionLevel: 'low', vibeLabel: 'Home / Grounded' },
+    { bar: 1, root: 8, quality: 'maj', romanNumeral: 'VI', tensionLevel: 'low', vibeLabel: 'Emotional Lift' },
+    { bar: 2, root: 3, quality: 'maj', romanNumeral: 'III', tensionLevel: 'low', vibeLabel: 'Open / Storytelling' },
+    { bar: 3, root: 10, quality: 'maj', romanNumeral: 'VII', tensionLevel: 'medium', vibeLabel: 'Driving / Anthemic' },
+  ];
+  return {
+    id: `proj_blank_${Date.now().toString(36)}`,
+    name: 'Untitled Blank Song',
+    presetId: 'blank',
+    bpm: 110,
+    timeSignature: '4/4',
+    activeSectionId: 'sec_exploration',
+    sections: [
+      {
+        id: 'sec_exploration',
+        name: 'Main Loop',
+        bars: 4,
+        root: 0, // C
+        scaleId: 'natural_minor',
+        chords: blankChords,
+        stems: makeDefaultStems(DARK_ANALOG_INSTRUMENTS, {}),
+      },
+    ],
+  };
+}

@@ -28,17 +28,23 @@ export const ChordTrack: React.FC<ChordTrackProps> = ({
   scrollLeft,
 }) => {
   const section = useDawStore((s) => s.getActiveSection());
+  const activeStemId = useDawStore((s) => s.activeStemId);
   const setBarChord = useDawStore((s) => s.setBarChord);
   const [editingBar, setEditingBar] = useState<number | null>(null);
   const [showCadenceHelper, setShowCadenceHelper] = useState(false);
 
   const chordOptions = getScaleChordOptions(section.root, section.scaleId);
   const cadenceOptions = getCadenceSuggestions(section.root, section.scaleId);
-  const padStem = section.stems['01_Ambient_Pad'];
+  const activeStem = section.stems[activeStemId];
 
   const audition = (opt: Pick<ChordOption, 'root' | 'quality'>) => {
     const midis = getChordMidiVoicing(opt, 3);
-    void audioEngine.auditionChord(padStem.id, padStem.instrumentId, midis, 0.7);
+    // Play chords using the currently selected melodic stem (if audible), otherwise a clean neutral preview
+    if (!activeStem.isDrum && !activeStem.muted) {
+      void audioEngine.auditionChord(activeStem.id, activeStem.instrumentId, midis, 0.65);
+    } else {
+      void audioEngine.auditionPreviewChord(midis, 0.6);
+    }
   };
 
   const applyChord = (bar: number, opt: ChordOption) => {
@@ -50,11 +56,11 @@ export const ChordTrack: React.FC<ChordTrackProps> = ({
       vibeLabel: opt.vibeLabel,
     });
     audition(opt);
-    setEditingBar(null);
-    setShowCadenceHelper(false);
   };
 
   const lastBarIdx = section.bars - 1;
+  const activeBarChord = editingBar !== null ? section.chords[editingBar] : null;
+  const lastBarChord = section.chords[lastBarIdx];
 
   return (
     <div className="relative bg-zinc-900 border-b border-zinc-800 flex items-stretch h-14 select-none">
@@ -153,38 +159,52 @@ export const ChordTrack: React.FC<ChordTrackProps> = ({
                 Choose Chord for Bar {editingBar + 1}
               </h4>
               <p className="text-[10px] text-zinc-400">
-                All diatonic chords stay in-key. Click to hear &amp; apply.
+                Click chords to audition &amp; compare. Click Done when happy.
               </p>
             </div>
             <button
               onClick={() => setEditingBar(null)}
-              className="text-[11px] text-zinc-400 hover:text-zinc-100 px-2 py-0.5 rounded bg-zinc-800 cursor-pointer"
+              className="text-[11px] font-semibold text-zinc-950 bg-amber-400 hover:bg-amber-300 px-2.5 py-1 rounded cursor-pointer"
             >
               Done
             </button>
           </div>
 
           <div className="grid grid-cols-3 gap-1.5">
-            {chordOptions.map((opt, idx) => (
-              <button
-                key={`${opt.romanNumeral}_${idx}`}
-                onClick={() => applyChord(editingBar, opt)}
-                className="text-left p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-amber-500/60 transition cursor-pointer group"
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-bold text-zinc-100 group-hover:text-amber-300">
-                    {formatChordName(opt)}
-                  </span>
-                  <span className="text-[11px] font-mono text-amber-400">{opt.romanNumeral}</span>
-                </div>
-                <div className="text-[10px] text-zinc-400 truncate mt-0.5">{opt.vibeLabel}</div>
-                {opt.isBorrowed && (
-                  <span className="inline-block mt-1 text-[9px] px-1 py-0.2 rounded bg-purple-500/20 text-purple-300">
-                    Color / Borrowed
-                  </span>
-                )}
-              </button>
-            ))}
+            {chordOptions.map((opt, idx) => {
+              const isCurrent =
+                activeBarChord &&
+                activeBarChord.root === opt.root &&
+                activeBarChord.quality === opt.quality;
+              return (
+                <button
+                  key={`${opt.romanNumeral}_${idx}`}
+                  onClick={() => applyChord(editingBar, opt)}
+                  className={`text-left p-2 rounded-lg border transition cursor-pointer group ${
+                    isCurrent
+                      ? 'bg-amber-500/20 border-amber-400 ring-1 ring-amber-400/50'
+                      : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 hover:border-amber-500/60'
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <span
+                      className={`text-xs font-bold ${
+                        isCurrent ? 'text-amber-200' : 'text-zinc-100 group-hover:text-amber-300'
+                      }`}
+                    >
+                      {formatChordName(opt)}
+                    </span>
+                    <span className="text-[11px] font-mono text-amber-400">{opt.romanNumeral}</span>
+                  </div>
+                  <div className="text-[10px] text-zinc-400 truncate mt-0.5">{opt.vibeLabel}</div>
+                  {opt.isBorrowed && (
+                    <span className="inline-block mt-1 text-[9px] px-1 py-0.2 rounded bg-purple-500/20 text-purple-300">
+                      Color / Borrowed
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       )}
@@ -201,36 +221,46 @@ export const ChordTrack: React.FC<ChordTrackProps> = ({
                 Final-Bar Turnaround Helper (Bar {lastBarIdx + 1})
               </h4>
               <p className="text-[10px] text-zinc-400">
-                Pick how your loop resolves back into Bar 1:
+                Try options below to hear how Bar {lastBarIdx + 1} pulls into Bar 1:
               </p>
             </div>
             <button
               onClick={() => setShowCadenceHelper(false)}
-              className="text-[10px] text-zinc-400 hover:text-zinc-100 cursor-pointer"
+              className="text-[10px] font-semibold text-zinc-950 bg-rose-400 hover:bg-rose-300 px-2 py-0.5 rounded cursor-pointer"
             >
-              ✕
+              Done
             </button>
           </div>
 
           <div className="space-y-1.5">
-            {cadenceOptions.map((opt, idx) => (
-              <button
-                key={`${opt.romanNumeral}_${idx}`}
-                onClick={() => applyChord(lastBarIdx, opt)}
-                className="w-full flex items-center justify-between p-2 rounded-lg bg-zinc-950 hover:bg-zinc-800 border border-zinc-800 hover:border-rose-400/60 transition cursor-pointer"
-              >
-                <div className="text-left">
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-xs font-bold text-zinc-100">
-                      {formatChordName(opt)}
-                    </span>
-                    <span className="text-xs font-mono text-amber-300">{opt.romanNumeral}</span>
+            {cadenceOptions.map((opt, idx) => {
+              const isCurrent =
+                lastBarChord &&
+                lastBarChord.root === opt.root &&
+                lastBarChord.quality === opt.quality;
+              return (
+                <button
+                  key={`${opt.romanNumeral}_${idx}`}
+                  onClick={() => applyChord(lastBarIdx, opt)}
+                  className={`w-full flex items-center justify-between p-2 rounded-lg border transition cursor-pointer ${
+                    isCurrent
+                      ? 'bg-rose-500/20 border-rose-400 ring-1 ring-rose-400/50'
+                      : 'bg-zinc-950 hover:bg-zinc-800 border-zinc-800 hover:border-rose-400/60'
+                  }`}
+                >
+                  <div className="text-left">
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-xs font-bold text-zinc-100">
+                        {formatChordName(opt)}
+                      </span>
+                      <span className="text-xs font-mono text-amber-300">{opt.romanNumeral}</span>
+                    </div>
+                    <div className="text-[10px] text-zinc-400">{opt.vibeLabel}</div>
                   </div>
-                  <div className="text-[10px] text-zinc-400">{opt.vibeLabel}</div>
-                </div>
-                <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
-              </button>
-            ))}
+                  <Volume2 className="w-3.5 h-3.5 text-zinc-500" />
+                </button>
+              );
+            })}
           </div>
         </div>
       )}

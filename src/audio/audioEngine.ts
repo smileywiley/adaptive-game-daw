@@ -12,6 +12,7 @@ class DawAudioEngine {
   private masterLimiter: Tone.Limiter | null = null;
   private masterGain: Tone.Volume | null = null;
   private voices: Partial<Record<StemId, SynthVoiceWrapper>> = {};
+  private previewVoice: Tone.PolySynth | null = null;
   private scheduledEventIds: number[] = [];
   private loopBeats = 16;
   private currentBpm = 110;
@@ -51,6 +52,44 @@ class DawAudioEngine {
     return voice;
   }
 
+  private getOrCreatePreviewVoice(): Tone.PolySynth {
+    if (!this.initialized || !this.masterGain) {
+      this.masterLimiter = new Tone.Limiter(-1.5).toDestination();
+      this.masterGain = new Tone.Volume(-2).connect(this.masterLimiter);
+      this.initialized = true;
+    }
+    if (!this.previewVoice) {
+      this.previewVoice = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.015, decay: 0.25, sustain: 0.35, release: 0.4 },
+      }).connect(this.masterGain);
+      this.previewVoice.volume.value = -8;
+      this.previewVoice.maxPolyphony = 12;
+    }
+    return this.previewVoice;
+  }
+
+  /**
+   * Updates stem mute/solo/volume in-place without rescheduling MIDI events.
+   * Note: In Tone.js, calling volume.rampTo() while output.mute is true can re-open gain,
+   * so we only update volume when audible and releaseAll() immediately when muted.
+   */
+  updateMixer(section: SongSection): void {
+    const anySolo = STEM_ORDER.some((id) => section.stems[id].solo);
+    for (const stemId of STEM_ORDER) {
+      const stem = section.stems[stemId];
+      const voice = this.getOrCreateVoice(stemId, stem.instrumentId);
+      const audible = anySolo ? stem.solo : !stem.muted;
+      if (!audible) {
+        voice.output.mute = true;
+        voice.releaseAll();
+      } else {
+        voice.output.mute = false;
+        voice.output.volume.rampTo(stem.volumeDb, 0.03);
+      }
+    }
+  }
+
   syncProject(project: DawProject, section: SongSection): void {
     this.currentBpm = project.bpm;
     const beatsPerBar = getBeatsPerBar(project.timeSignature);
@@ -64,15 +103,8 @@ class DawAudioEngine {
     const loopDurationSec = (this.loopBeats * 60) / project.bpm;
     transport.loopEnd = loopDurationSec;
 
-    // Update stem voices & mixer levels
-    const anySolo = STEM_ORDER.some((id) => section.stems[id].solo);
-    for (const stemId of STEM_ORDER) {
-      const stem = section.stems[stemId];
-      const voice = this.getOrCreateVoice(stemId, stem.instrumentId);
-      const audible = !stem.muted && (!anySolo || stem.solo);
-      voice.output.mute = !audible;
-      voice.output.volume.rampTo(stem.volumeDb, 0.04);
-    }
+    // Update stem voices & mixer levels cleanly
+    this.updateMixer(section);
 
     // Reschedule all MIDI events cleanly
     this.clearScheduledEvents();
@@ -87,7 +119,7 @@ class DawAudioEngine {
 
         const eventId = transport.schedule((time) => {
           const voice = this.voices[stemId];
-          if (!voice) return;
+          if (!voice || voice.output.mute) return;
           voice.triggerAttackRelease(note.midi, durationSec, time, note.velocity);
         }, startTimeSec);
         this.scheduledEventIds.push(eventId);
@@ -173,6 +205,14 @@ class DawAudioEngine {
     for (const midi of midis) {
       voice.triggerAttackRelease(midi, durationSec, now, 0.65);
     }
+  }
+
+  /** Plays a clean neutral chord preview (used when editing chords on Percussion or a muted stem). */
+  async auditionPreviewChord(midis: number[], durationSec = 0.6): Promise<void> {
+    await this.ensureStarted();
+    const preview = this.getOrCreatePreviewVoice();
+    const freqs = midis.map((m) => Tone.Frequency(m, 'midi').toFrequency());
+    preview.triggerAttackRelease(freqs, durationSec, Tone.now(), 0.6);
   }
 }
 
