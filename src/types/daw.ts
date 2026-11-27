@@ -77,14 +77,35 @@ export interface StemTrack {
   notes: MidiNote[];
 }
 
+export type TransitionQuantization = 'next_beat' | 'next_bar' | 'phrase_4' | 'end_of_loop';
+
+export type SectionRole = 'loop' | 'stinger';
+
 export interface SongSection {
   id: string;
   name: string;
-  bars: number; // 4, 8, or 16
+  role?: SectionRole; // defaults to 'loop'
+  bars: number; // 2 (stinger), 4, 8, or 16
   root: PitchClass;
   scaleId: ScaleId;
+  transitionQuantization?: TransitionQuantization; // defaults to 'next_bar'
+  useTransitionFill?: boolean; // optional 1-bar fill bridge before switching
   chords: ChordEvent[];
   stems: Record<StemId, StemTrack>;
+}
+
+export interface SimulationEvent {
+  timeSec: number;
+  type: 'state' | 'intensity' | 'stinger';
+  value: string | number;
+}
+
+export interface SimulationScenario {
+  id: string;
+  name: string;
+  description: string;
+  durationSec: number;
+  events: SimulationEvent[];
 }
 
 export interface DawProject {

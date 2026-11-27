@@ -139,13 +139,115 @@ function buildSectionFromPreset(
   }
   return {
     id: 'sec_exploration',
-    name: 'Main Loop',
+    name: 'Exploration',
+    role: 'loop',
     bars: preset.bars,
     root: preset.root,
     scaleId: preset.scaleId,
+    transitionQuantization: 'next_bar',
+    useTransitionFill: false,
     chords: preset.chords.map((c) => ({ ...c })),
     stems: makeDefaultStems(preset.instruments, notesByStem),
   };
+}
+
+function buildAdaptiveSuite(
+  preset: Omit<MoodPresetDefinition, 'buildProject'>,
+  customExplorationNotes?: Partial<Record<StemId, StemTrack['notes']>>,
+): SongSection[] {
+  const exploration = buildSectionFromPreset(preset, customExplorationNotes);
+  const bpb = getBeatsPerBar(preset.timeSignature);
+
+  // Alert section: heightened tension chords (emphasize bII / iv / V7)
+  const alertChords: ChordEvent[] = [
+    { bar: 0, root: preset.root, quality: 'min', romanNumeral: 'i', tensionLevel: 'medium', vibeLabel: 'Tense Watch' },
+    { bar: 1, root: mod12(preset.root + 1), quality: 'maj', romanNumeral: 'bII', tensionLevel: 'high', vibeLabel: 'Dark Tension' },
+    { bar: 2, root: mod12(preset.root + 5), quality: 'min', romanNumeral: 'iv', tensionLevel: 'medium', vibeLabel: 'Closing In' },
+    { bar: 3, root: mod12(preset.root + 7), quality: 'dom7', romanNumeral: 'V7', tensionLevel: 'high', vibeLabel: 'Pulls to Combat' },
+  ];
+  const alert: SongSection = {
+    id: 'sec_alert',
+    name: 'Alert',
+    role: 'loop',
+    bars: 4,
+    root: preset.root,
+    scaleId: preset.scaleId,
+    transitionQuantization: 'next_bar',
+    useTransitionFill: true,
+    chords: alertChords,
+    stems: makeDefaultStems(preset.instruments, {
+      '01_Ambient_Pad': generateStemPatternForChords('01_Ambient_Pad', alertChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+      '02_Rhythm_Pulse': generateStemPatternForChords('02_Rhythm_Pulse', alertChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+      '03_Bass': generateStemPatternForChords('03_Bass', alertChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+      '04_Percussion': generateStemPatternForChords('04_Percussion', alertChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+      '05_Lead_Melody': [],
+    }),
+  };
+
+  // Combat section: full-intensity driving progression
+  const combatChords: ChordEvent[] = [
+    { bar: 0, root: preset.root, quality: 'power', romanNumeral: 'i5', tensionLevel: 'medium', vibeLabel: 'Heavy Impact' },
+    { bar: 1, root: mod12(preset.root + 8), quality: 'maj', romanNumeral: 'bVI', tensionLevel: 'medium', vibeLabel: 'Epic Surge' },
+    { bar: 2, root: mod12(preset.root + 10), quality: 'maj', romanNumeral: 'bVII', tensionLevel: 'high', vibeLabel: 'Driving Push' },
+    { bar: 3, root: mod12(preset.root + 7), quality: 'dom7', romanNumeral: 'V7', tensionLevel: 'high', vibeLabel: 'Boss Turnaround' },
+  ];
+  const combat: SongSection = {
+    id: 'sec_combat',
+    name: 'Combat',
+    role: 'loop',
+    bars: 4,
+    root: preset.root,
+    scaleId: preset.scaleId,
+    transitionQuantization: 'next_bar',
+    useTransitionFill: true,
+    chords: combatChords,
+    stems: makeDefaultStems(preset.instruments, {
+      '01_Ambient_Pad': generateStemPatternForChords('01_Ambient_Pad', combatChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+      '02_Rhythm_Pulse': generateStemPatternForChords('02_Rhythm_Pulse', combatChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+      '03_Bass': generateStemPatternForChords('03_Bass', combatChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+      '04_Percussion': generateStemPatternForChords('04_Percussion', combatChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+      '05_Lead_Melody': generateStemPatternForChords('05_Lead_Melody', combatChords, 4, preset.timeSignature, preset.root, preset.scaleId),
+    }),
+  };
+
+  // Victory_Stinger: 2-bar one-shot resolving cue
+  const stingerChords: ChordEvent[] = [
+    { bar: 0, root: mod12(preset.root + 7), quality: 'maj', romanNumeral: 'V', tensionLevel: 'high', vibeLabel: 'Build Up' },
+    { bar: 1, root: preset.root, quality: 'maj', romanNumeral: 'I', tensionLevel: 'low', vibeLabel: 'Triumphant Resolve' },
+  ];
+  const stingerLeadRoot = 60 + preset.root;
+  const stinger: SongSection = {
+    id: 'sec_victory_stinger',
+    name: 'Victory_Stinger',
+    role: 'stinger',
+    bars: 2,
+    root: preset.root,
+    scaleId: 'major',
+    transitionQuantization: 'next_beat',
+    useTransitionFill: false,
+    chords: stingerChords,
+    stems: makeDefaultStems(preset.instruments, {
+      '01_Ambient_Pad': generateStemPatternForChords('01_Ambient_Pad', stingerChords, 2, preset.timeSignature, preset.root, 'major'),
+      '02_Rhythm_Pulse': [],
+      '03_Bass': [
+        { id: createNoteId('st'), midi: 36 + mod12(preset.root + 7), startBeat: 0, durationBeats: bpb, velocity: 0.9 },
+        { id: createNoteId('st'), midi: 36 + preset.root, startBeat: bpb, durationBeats: bpb, velocity: 0.95 },
+      ],
+      '04_Percussion': [
+        { id: createNoteId('st'), midi: 38, startBeat: bpb - 1, durationBeats: 0.25, velocity: 0.85 },
+        { id: createNoteId('st'), midi: 38, startBeat: bpb - 0.5, durationBeats: 0.25, velocity: 0.92 },
+        { id: createNoteId('st'), midi: 49, startBeat: bpb, durationBeats: 0.5, velocity: 0.95 },
+        { id: createNoteId('st'), midi: 36, startBeat: bpb, durationBeats: 0.25, velocity: 1.0 },
+      ],
+      '05_Lead_Melody': [
+        { id: createNoteId('st'), midi: stingerLeadRoot + 7, startBeat: 0, durationBeats: 0.75, velocity: 0.88 },
+        { id: createNoteId('st'), midi: stingerLeadRoot + 11, startBeat: 1, durationBeats: 0.75, velocity: 0.9 },
+        { id: createNoteId('st'), midi: stingerLeadRoot + 12, startBeat: bpb, durationBeats: bpb - 0.25, velocity: 0.96 },
+      ],
+    }),
+  };
+
+  return [exploration, alert, combat, stinger];
 }
 
 const DARK_ANALOG_INSTRUMENTS: Record<StemId, InstrumentPresetId> = {
@@ -365,7 +467,7 @@ export const MOOD_PRESETS: MoodPresetDefinition[] = [
       bpm: carpenterBase.bpm,
       timeSignature: carpenterBase.timeSignature,
       activeSectionId: 'sec_exploration',
-      sections: [buildSectionFromPreset(carpenterBase, { '05_Lead_Melody': buildCarpenterCustomLead() })],
+      sections: buildAdaptiveSuite(carpenterBase, { '05_Lead_Melody': buildCarpenterCustomLead() }),
     }),
   },
   {
@@ -377,7 +479,7 @@ export const MOOD_PRESETS: MoodPresetDefinition[] = [
       bpm: cyberpunkBase.bpm,
       timeSignature: cyberpunkBase.timeSignature,
       activeSectionId: 'sec_exploration',
-      sections: [buildSectionFromPreset(cyberpunkBase)],
+      sections: buildAdaptiveSuite(cyberpunkBase),
     }),
   },
   {
@@ -389,7 +491,7 @@ export const MOOD_PRESETS: MoodPresetDefinition[] = [
       bpm: neonRainBase.bpm,
       timeSignature: neonRainBase.timeSignature,
       activeSectionId: 'sec_exploration',
-      sections: [buildSectionFromPreset(neonRainBase)],
+      sections: buildAdaptiveSuite(neonRainBase),
     }),
   },
   {
@@ -401,7 +503,7 @@ export const MOOD_PRESETS: MoodPresetDefinition[] = [
       bpm: retroRpgBase.bpm,
       timeSignature: retroRpgBase.timeSignature,
       activeSectionId: 'sec_exploration',
-      sections: [buildSectionFromPreset(retroRpgBase)],
+      sections: buildAdaptiveSuite(retroRpgBase),
     }),
   },
   {
@@ -413,7 +515,7 @@ export const MOOD_PRESETS: MoodPresetDefinition[] = [
       bpm: stealthBase.bpm,
       timeSignature: stealthBase.timeSignature,
       activeSectionId: 'sec_exploration',
-      sections: [buildSectionFromPreset(stealthBase, buildStealthCustomStems())],
+      sections: buildAdaptiveSuite(stealthBase, buildStealthCustomStems()),
     }),
   },
   {
@@ -425,7 +527,7 @@ export const MOOD_PRESETS: MoodPresetDefinition[] = [
       bpm: bossBase.bpm,
       timeSignature: bossBase.timeSignature,
       activeSectionId: 'sec_exploration',
-      sections: [buildSectionFromPreset(bossBase)],
+      sections: buildAdaptiveSuite(bossBase),
     }),
   },
 ];
@@ -451,10 +553,13 @@ export function createBlankProject(): DawProject {
     sections: [
       {
         id: 'sec_exploration',
-        name: 'Main Loop',
+        name: 'Exploration',
+        role: 'loop',
         bars: 4,
         root: 0, // C
         scaleId: 'natural_minor',
+        transitionQuantization: 'next_bar',
+        useTransitionFill: false,
         chords: blankChords,
         stems: makeDefaultStems(DARK_ANALOG_INSTRUMENTS, {}),
       },

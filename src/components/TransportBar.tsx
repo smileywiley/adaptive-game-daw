@@ -2,6 +2,7 @@ import React, { useRef } from 'react';
 import {
   Circle,
   Download,
+  Gamepad2,
   Music,
   Pause,
   Play,
@@ -25,6 +26,8 @@ export const TransportBar: React.FC = () => {
   const midiSupported = useDawStore((s) => s.midiSupported);
   const midiDevices = useDawStore((s) => s.midiDevices);
   const selectedMidiDeviceId = useDawStore((s) => s.selectedMidiDeviceId);
+  const simulatorOpen = useDawStore((s) => s.simulatorOpen);
+  const simulatorEnabled = useDawStore((s) => s.simulatorEnabled);
 
   const togglePlay = useDawStore((s) => s.togglePlay);
   const stopPlayback = useDawStore((s) => s.stopPlayback);
@@ -35,6 +38,7 @@ export const TransportBar: React.FC = () => {
   const setKeyAndScale = useDawStore((s) => s.setKeyAndScale);
   const setAutoRemap = useDawStore((s) => s.setAutoRemapOnKeyChange);
   const setPresetModalOpen = useDawStore((s) => s.setPresetModalOpen);
+  const setSimulatorOpen = useDawStore((s) => s.setSimulatorOpen);
   const setSelectedMidiDeviceId = useDawStore((s) => s.setSelectedMidiDeviceId);
   const undo = useDawStore((s) => s.undo);
   const exportProjectJson = useDawStore((s) => s.exportProjectJson);
@@ -155,6 +159,7 @@ export const TransportBar: React.FC = () => {
             className="bg-zinc-950 border border-zinc-700 rounded px-1.5 py-0.5 text-zinc-200 focus:outline-none focus:border-amber-500"
             title="Loop Length in Bars"
           >
+            <option value={2}>2 Bars</option>
             <option value={4}>4 Bars</option>
             <option value={8}>8 Bars</option>
             <option value={16}>16 Bars</option>
@@ -202,8 +207,24 @@ export const TransportBar: React.FC = () => {
         </div>
       </div>
 
-      {/* Right: Mini USB MIDI Status + Undo + JSON Save/Load */}
+      {/* Right: Simulator Toggle + Mini USB MIDI Status + Undo + JSON Save/Load */}
       <div className="flex items-center gap-1.5">
+        <button
+          onClick={() => setSimulatorOpen(!simulatorOpen)}
+          className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold transition cursor-pointer ${
+            simulatorOpen || simulatorEnabled
+              ? 'bg-emerald-500/20 border-emerald-400/70 text-emerald-200'
+              : 'bg-zinc-900 border-zinc-800 text-zinc-300 hover:bg-zinc-800'
+          }`}
+          title="Open Game State Simulator to test live state transitions, intensity layering & gameplay scenarios"
+        >
+          <Gamepad2 className="w-3.5 h-3.5" />
+          <span>Simulator</span>
+          {simulatorEnabled && (
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+          )}
+        </button>
+
         {/* Mini USB MIDI Keyboard Indicator */}
         <div
           className={`flex items-center gap-1.5 px-2 py-1 rounded-md border text-xs ${

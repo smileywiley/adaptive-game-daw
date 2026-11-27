@@ -8,10 +8,13 @@ import {
   PitchClass,
   QuantizeGrid,
   ScaleId,
+  SectionRole,
+  SimulationScenario,
   SongSection,
   STEM_ORDER,
   StemId,
   TimeSignature,
+  TransitionQuantization,
 } from '../types/daw';
 import { createBlankProject, createDefaultProject, MOOD_PRESETS } from '../presets/moodPresets';
 import {
@@ -98,8 +101,14 @@ interface DawState {
   midiDevices: MidiDeviceInfo[];
   selectedMidiDeviceId: string | 'all';
 
-  // UI modals
+  // UI modals & drawers
   presetModalOpen: boolean;
+  simulatorOpen: boolean;
+
+  // Adaptive Game State Simulator
+  simulatorEnabled: boolean; // When true, simIntensity drives vertical stem crossfading
+  simIntensity: number; // 0..1
+  recordedScenario: SimulationScenario | null;
 
   // Undo stack (lightweight snapshots of sections)
   undoStack: SongSection[][];
@@ -109,10 +118,29 @@ interface DawState {
 
   // Actions
   setPresetModalOpen: (open: boolean) => void;
+  setSimulatorOpen: (open: boolean) => void;
+  setSimulatorEnabled: (enabled: boolean) => void;
+  setSimIntensity: (intensity: number) => void;
+  setRecordedScenario: (scenario: SimulationScenario | null) => void;
   loadMoodPreset: (presetId: string) => void;
   createBlankSong: () => void;
   importProjectJson: (jsonText: string) => { ok: boolean; error?: string };
   exportProjectJson: () => string;
+
+  // Horizontal Sections (Game States)
+  setActiveSection: (sectionId: string) => void;
+  addSection: (name: string, role?: SectionRole) => void;
+  duplicateActiveSection: () => void;
+  renameSection: (sectionId: string, name: string) => void;
+  deleteSection: (sectionId: string) => void;
+  setSectionTransitionRule: (
+    sectionId: string,
+    quantization: TransitionQuantization,
+    useTransitionFill: boolean,
+  ) => void;
+  requestStateTransition: (targetSectionId: string) => void;
+  requestStateTransitionByName: (name: string) => void;
+  triggerStinger: (sectionIdOrName?: string) => Promise<void>;
 
   setActiveStem: (stemId: StemId) => void;
   setBpm: (bpm: number) => void;
@@ -138,9 +166,10 @@ interface DawState {
   autoFillStemFromChords: (stemId: StemId) => void;
   clearStemNotes: (stemId: StemId) => void;
 
-  // Stem mixer
+  // Stem mixer & vertical intensity
   setStemInstrument: (stemId: StemId, instrumentId: InstrumentPresetId) => void;
   setStemVolume: (stemId: StemId, volumeDb: number) => void;
+  setStemIntensityRange: (stemId: StemId, intensityMin: number, intensityMax?: number) => void;
   toggleStemMute: (stemId: StemId) => void;
   toggleStemSolo: (stemId: StemId) => void;
 
@@ -206,6 +235,10 @@ export const useDawStore = create<DawState>((set, get) => ({
   selectedMidiDeviceId: 'all',
 
   presetModalOpen: false,
+  simulatorOpen: false,
+  simulatorEnabled: false,
+  simIntensity: 0.75,
+  recordedScenario: null,
   undoStack: [],
 
   getActiveSection: () => {
@@ -214,6 +247,202 @@ export const useDawStore = create<DawState>((set, get) => ({
   },
 
   setPresetModalOpen: (open) => set({ presetModalOpen: open }),
+
+  setSimulatorOpen: (open) => set({ simulatorOpen: open }),
+
+  setSimulatorEnabled: (enabled) => {
+    const { simIntensity } = get();
+    const section = get().getActiveSection();
+    audioEngine.setSimulationIntensity(enabled ? simIntensity : null, section);
+    set({ simulatorEnabled: enabled });
+  },
+
+  setSimIntensity: (intensity) => {
+    const clamped = Math.max(0, Math.min(1, intensity));
+    const { simulatorEnabled } = get();
+    const section = get().getActiveSection();
+    set({ simIntensity: clamped });
+    if (simulatorEnabled) {
+      audioEngine.setSimulationIntensity(clamped, section);
+    }
+  },
+
+  setRecordedScenario: (recordedScenario) => set({ recordedScenario }),
+
+  setActiveSection: (sectionId) => {
+    const prev = get().project;
+    if (!prev.sections.some((s) => s.id === sectionId)) return;
+    audioEngine.cancelPendingTransition();
+    const nextProject = { ...prev, activeSectionId: sectionId };
+    saveProjectToStorage(nextProject);
+    set({ project: nextProject });
+    syncAudio(nextProject);
+  },
+
+  addSection: (name, role = 'loop') => {
+    const prev = get().project;
+    const base = get().getActiveSection();
+    const bars = role === 'stinger' ? 2 : 4;
+    const id = `sec_${Date.now().toString(36)}`;
+    const newChords = base.chords.slice(0, bars).map((c, idx) => ({ ...c, bar: idx }));
+    while (newChords.length < bars) {
+      newChords.push({ ...base.chords[0], bar: newChords.length });
+    }
+    const emptyStems = Object.fromEntries(
+      STEM_ORDER.map((sid) => [sid, { ...base.stems[sid], notes: [] }]),
+    ) as SongSection['stems'];
+
+    const newSection: SongSection = {
+      id,
+      name: name.trim() || `Section ${prev.sections.length + 1}`,
+      role,
+      bars,
+      root: base.root,
+      scaleId: base.scaleId,
+      transitionQuantization: role === 'stinger' ? 'next_beat' : 'next_bar',
+      useTransitionFill: role === 'loop',
+      chords: newChords,
+      stems: emptyStems,
+    };
+
+    const nextProject: DawProject = {
+      ...prev,
+      activeSectionId: id,
+      sections: [...prev.sections, newSection],
+    };
+    saveProjectToStorage(nextProject);
+    set((state) => ({
+      project: nextProject,
+      undoStack: [...state.undoStack.slice(-19), state.project.sections],
+    }));
+    syncAudio(nextProject);
+  },
+
+  duplicateActiveSection: () => {
+    const prev = get().project;
+    const base = get().getActiveSection();
+    const id = `sec_${Date.now().toString(36)}`;
+    const clonedStems = Object.fromEntries(
+      STEM_ORDER.map((sid) => [
+        sid,
+        {
+          ...base.stems[sid],
+          notes: base.stems[sid].notes.map((n) => ({ ...n, id: createNoteId('dup') })),
+        },
+      ]),
+    ) as SongSection['stems'];
+
+    const clone: SongSection = {
+      ...base,
+      id,
+      name: `${base.name} Copy`,
+      chords: base.chords.map((c) => ({ ...c })),
+      stems: clonedStems,
+    };
+    const nextProject: DawProject = {
+      ...prev,
+      activeSectionId: id,
+      sections: [...prev.sections, clone],
+    };
+    saveProjectToStorage(nextProject);
+    set((state) => ({
+      project: nextProject,
+      undoStack: [...state.undoStack.slice(-19), state.project.sections],
+    }));
+    syncAudio(nextProject);
+  },
+
+  renameSection: (sectionId, name) => {
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const prev = get().project;
+    const nextProject: DawProject = {
+      ...prev,
+      sections: prev.sections.map((s) => (s.id === sectionId ? { ...s, name: trimmed } : s)),
+    };
+    saveProjectToStorage(nextProject);
+    set({ project: nextProject });
+  },
+
+  deleteSection: (sectionId) => {
+    const prev = get().project;
+    if (prev.sections.length <= 1) return;
+    const remaining = prev.sections.filter((s) => s.id !== sectionId);
+    const nextActiveId =
+      prev.activeSectionId === sectionId ? remaining[0].id : prev.activeSectionId;
+    const nextProject: DawProject = {
+      ...prev,
+      activeSectionId: nextActiveId,
+      sections: remaining,
+    };
+    saveProjectToStorage(nextProject);
+    set((state) => ({
+      project: nextProject,
+      undoStack: [...state.undoStack.slice(-19), state.project.sections],
+    }));
+    syncAudio(nextProject);
+  },
+
+  setSectionTransitionRule: (sectionId, quantization, useTransitionFill) => {
+    const prev = get().project;
+    const nextProject: DawProject = {
+      ...prev,
+      sections: prev.sections.map((s) =>
+        s.id === sectionId
+          ? { ...s, transitionQuantization: quantization, useTransitionFill }
+          : s,
+      ),
+    };
+    saveProjectToStorage(nextProject);
+    set({ project: nextProject });
+  },
+
+  requestStateTransition: (targetSectionId) => {
+    const { project, isPlaying } = get();
+    const currentSection = get().getActiveSection();
+    const targetSection = project.sections.find((s) => s.id === targetSectionId);
+    if (!targetSection || targetSection.id === currentSection.id) return;
+
+    if (!isPlaying) {
+      get().setActiveSection(targetSectionId);
+      return;
+    }
+
+    audioEngine.queueSectionTransition(project, currentSection, targetSection, () => {
+      const latest = get().project;
+      const nextProject = { ...latest, activeSectionId: targetSectionId };
+      saveProjectToStorage(nextProject);
+      set({ project: nextProject });
+    });
+  },
+
+  requestStateTransitionByName: (name) => {
+    const { project } = get();
+    const lower = name.toLowerCase();
+    const target =
+      project.sections.find((s) => s.name.toLowerCase() === lower) ??
+      project.sections.find((s) => s.name.toLowerCase().includes(lower));
+    if (target) {
+      get().requestStateTransition(target.id);
+    }
+  },
+
+  triggerStinger: async (sectionIdOrName) => {
+    const { project } = get();
+    let stinger: SongSection | undefined;
+    if (sectionIdOrName) {
+      stinger =
+        project.sections.find((s) => s.id === sectionIdOrName) ??
+        project.sections.find((s) => s.name.toLowerCase() === sectionIdOrName.toLowerCase());
+    }
+    if (!stinger) {
+      stinger = project.sections.find((s) => s.role === 'stinger');
+    }
+    if (stinger) {
+      await audioEngine.playStinger(stinger, project.bpm);
+      set({ audioUnlocked: true });
+    }
+  },
 
   loadMoodPreset: (presetId) => {
     const preset = MOOD_PRESETS.find((p) => p.id === presetId);
@@ -286,7 +515,7 @@ export const useDawStore = create<DawState>((set, get) => ({
   },
 
   setSectionBars: (bars) => {
-    const clamped = bars === 4 || bars === 8 || bars === 16 ? bars : 4;
+    const clamped = bars === 2 || bars === 4 || bars === 8 || bars === 16 ? bars : 4;
     const prev = get().project;
     const nextProject = updateActiveSection(prev, (sec) => {
       const nextChords: ChordEvent[] = [];
@@ -457,6 +686,26 @@ export const useDawStore = create<DawState>((set, get) => ({
       stems: {
         ...sec.stems,
         [stemId]: { ...sec.stems[stemId], volumeDb },
+      },
+    }));
+    saveProjectToStorage(nextProject);
+    set({ project: nextProject });
+    syncMixer(nextProject);
+  },
+
+  setStemIntensityRange: (stemId, intensityMin, intensityMax = 1.0) => {
+    const clampedMin = Math.max(0, Math.min(0.95, intensityMin));
+    const clampedMax = Math.max(clampedMin + 0.05, Math.min(1, intensityMax));
+    const prev = get().project;
+    const nextProject = updateActiveSection(prev, (sec) => ({
+      ...sec,
+      stems: {
+        ...sec.stems,
+        [stemId]: {
+          ...sec.stems[stemId],
+          intensityMin: clampedMin,
+          intensityMax: clampedMax,
+        },
       },
     }));
     saveProjectToStorage(nextProject);
