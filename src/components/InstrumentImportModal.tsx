@@ -4,13 +4,16 @@ import {
   Check,
   CheckCircle2,
   FolderUp,
+  Loader2,
   Music2,
+  Play,
   Search,
   Sparkles,
   Upload,
   X,
 } from 'lucide-react';
 import { useDawStore } from '../store/useDawStore';
+import { audioEngine } from '../audio/audioEngine';
 import {
   CustomInstrumentEntry,
   getCustomInstruments,
@@ -51,8 +54,10 @@ const COMPAT_BADGE: Record<
 
 export const InstrumentImportModal: React.FC = () => {
   const isOpen = useDawStore((s) => s.instrumentModalOpen);
+  const project = useDawStore((s) => s.project);
+  const section = useDawStore((s) => s.getActiveSection());
   const activeStemId = useDawStore((s) => s.activeStemId);
-  const activeStem = useDawStore((s) => s.getActiveSection().stems[s.activeStemId]);
+  const activeStem = section.stems[activeStemId];
   const setInstrumentModalOpen = useDawStore((s) => s.setInstrumentModalOpen);
   const setStemInstrument = useDawStore((s) => s.setStemInstrument);
 
@@ -60,6 +65,7 @@ export const InstrumentImportModal: React.FC = () => {
   const [sf2Banks, setSf2Banks] = useState<LoadedSf2Bank[]>(() => getLoadedSf2Banks());
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyCompatible, setOnlyCompatible] = useState(false);
+  const [previewingKey, setPreviewingKey] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -70,6 +76,13 @@ export const InstrumentImportModal: React.FC = () => {
       setSf2Banks(getLoadedSf2Banks());
     });
   }, []);
+
+  useEffect(() => {
+    if (!isOpen) {
+      audioEngine.stopInstrumentPreview();
+      setPreviewingKey(null);
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -87,7 +100,7 @@ export const InstrumentImportModal: React.FC = () => {
         if (lower.endsWith('.sf2')) {
           const bank = await importSf2File(file);
           setStatusMsg(
-            `Loaded SoundFont "${file.name}" (${bank.presets.length} presets — search below).`,
+            `Loaded SoundFont "${file.name}" (${bank.presets.length} presets — search & preview below).`,
           );
         } else if (lower.endsWith('.zip')) {
           const entry = await importSfzZipFile(file);
@@ -116,6 +129,38 @@ export const InstrumentImportModal: React.FC = () => {
     } finally {
       setBusy(false);
     }
+  };
+
+  const handlePreviewEntry = async (key: string, entry: CustomInstrumentEntry) => {
+    setErrorMsg(null);
+    setPreviewingKey(key);
+    try {
+      const res = await audioEngine.previewCustomInstrument(
+        entry,
+        section,
+        activeStem,
+        project.bpm,
+        project.timeSignature,
+      );
+      setStatusMsg(
+        res.mode === 'bar'
+          ? `Previewing "${entry.name}" on ${activeStem.name} (Bar ${res.barNumber}).`
+          : `Previewing "${entry.name}" (stem is empty — playing sample notes).`,
+      );
+    } catch {
+      setErrorMsg(`Could not decode audio samples for "${entry.name}".`);
+    } finally {
+      setPreviewingKey((curr) => (curr === key ? null : curr));
+    }
+  };
+
+  const handlePreviewSf2Preset = async (bank: LoadedSf2Bank, presetIndex: number) => {
+    const entry = bank.loadPreset(presetIndex);
+    if (!entry) {
+      setErrorMsg('Could not extract samples for that SoundFont preset.');
+      return;
+    }
+    await handlePreviewEntry(`${bank.id}_${presetIndex}`, entry);
   };
 
   const handleLoadSf2Preset = (bank: LoadedSf2Bank, presetIndex: number) => {
@@ -317,18 +362,33 @@ export const InstrumentImportModal: React.FC = () => {
                             </span>
                           </div>
 
-                          <button
-                            onClick={() => handleLoadSf2Preset(bank, idx)}
-                            disabled={mismatch}
-                            className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/35 disabled:opacity-35 disabled:cursor-not-allowed border border-cyan-500/40 text-cyan-200 text-[11px] font-semibold cursor-pointer shrink-0 transition"
-                            title={
-                              mismatch
-                                ? `Switch to a ${isDrum ? 'Percussion' : 'melodic'} stem to assign`
-                                : `Load onto ${activeStem.name}`
-                            }
-                          >
-                            Use on {activeStem.shortLabel}
-                          </button>
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            <button
+                              onClick={() => void handlePreviewSf2Preset(bank, idx)}
+                              disabled={previewingKey === `${bank.id}_${idx}`}
+                              className="flex items-center gap-1 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-medium cursor-pointer transition disabled:opacity-50"
+                              title="Preview 1 non-empty bar of your current stem (or 3 sample notes if empty)"
+                            >
+                              {previewingKey === `${bank.id}_${idx}` ? (
+                                <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                              ) : (
+                                <Play className="w-3 h-3 text-amber-400" />
+                              )}
+                              <span>Preview</span>
+                            </button>
+                            <button
+                              onClick={() => handleLoadSf2Preset(bank, idx)}
+                              disabled={mismatch}
+                              className="px-2.5 py-1 rounded bg-cyan-500/20 hover:bg-cyan-500/35 disabled:opacity-35 disabled:cursor-not-allowed border border-cyan-500/40 text-cyan-200 text-[11px] font-semibold cursor-pointer shrink-0 transition"
+                              title={
+                                mismatch
+                                  ? `Switch to a ${isDrum ? 'Percussion' : 'melodic'} stem to assign`
+                                  : `Load onto ${activeStem.name}`
+                              }
+                            >
+                              Use on {activeStem.shortLabel}
+                            </button>
+                          </div>
                         </div>
                       );
                     })
@@ -377,17 +437,32 @@ export const InstrumentImportModal: React.FC = () => {
                         <div className="text-[10px] text-zinc-500">{inst.description}</div>
                       </div>
 
-                      <button
-                        disabled={mismatch}
-                        onClick={() => {
-                          setStemInstrument(activeStemId, inst.id);
-                          setStatusMsg(`Assigned "${inst.name}" to ${activeStem.name}.`);
-                        }}
-                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-35 disabled:cursor-not-allowed border border-zinc-700 text-[11px] text-amber-300 font-medium cursor-pointer shrink-0"
-                      >
-                        <Upload className="w-3 h-3" />
-                        Assign to {activeStem.shortLabel}
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          onClick={() => void handlePreviewEntry(inst.id, inst)}
+                          disabled={previewingKey === inst.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 text-[11px] font-medium cursor-pointer transition disabled:opacity-50"
+                          title="Preview 1 non-empty bar of your current stem (or 3 sample notes if empty)"
+                        >
+                          {previewingKey === inst.id ? (
+                            <Loader2 className="w-3 h-3 animate-spin text-amber-400" />
+                          ) : (
+                            <Play className="w-3 h-3 text-amber-400" />
+                          )}
+                          <span>Preview</span>
+                        </button>
+                        <button
+                          disabled={mismatch}
+                          onClick={() => {
+                            setStemInstrument(activeStemId, inst.id);
+                            setStatusMsg(`Assigned "${inst.name}" to ${activeStem.name}.`);
+                          }}
+                          className="flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-35 disabled:cursor-not-allowed border border-zinc-700 text-[11px] text-amber-300 font-medium cursor-pointer shrink-0"
+                        >
+                          <Upload className="w-3 h-3" />
+                          Assign to {activeStem.shortLabel}
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

@@ -2,18 +2,22 @@ import * as Tone from 'tone';
 import {
   DawProject,
   InstrumentPresetId,
+  MidiNote,
   SongSection,
   STEM_ORDER,
   StemId,
+  StemTrack,
+  TimeSignature,
   TransitionQuantization,
 } from '../types/daw';
-import { getBeatsPerBar } from '../theory/musicTheory';
+import { getBeatsPerBar, getChordMidiVoicing, midiToNoteName } from '../theory/musicTheory';
 import {
   computeBeatsUntilTransition,
   computeStemIntensityGain,
   gainToDbOffset,
 } from '../adaptive/adaptiveLogic';
 import { createInstrumentVoice, SynthVoiceWrapper } from './synthBank';
+import { CustomInstrumentEntry } from './customInstruments';
 
 export interface TransitionStatus {
   pendingSectionId: string;
@@ -424,6 +428,123 @@ class DawAudioEngine {
     const preview = this.getOrCreatePreviewVoice();
     const freqs = midis.map((m) => Tone.Frequency(m, 'midi').toFrequency());
     preview.triggerAttackRelease(freqs, durationSec, Tone.now(), 0.6);
+  }
+
+  private activePreviewCleanup: (() => void) | null = null;
+  private previewRequestId = 0;
+
+  stopInstrumentPreview(): void {
+    this.previewRequestId += 1;
+    if (this.activePreviewCleanup) {
+      this.activePreviewCleanup();
+      this.activePreviewCleanup = null;
+    }
+  }
+
+  /**
+   * Auditions a custom .sf2/.sfz/.wav instrument by playing the first non-empty bar
+   * of the active stem (or 3 musical sample notes / 4 drum hits if all bars are empty).
+   */
+  async previewCustomInstrument(
+    entry: CustomInstrumentEntry,
+    section: SongSection,
+    stem: StemTrack,
+    bpm: number,
+    timeSignature: TimeSignature,
+  ): Promise<{ mode: 'bar' | 'sample'; barNumber?: number }> {
+    await this.ensureStarted();
+    this.stopInstrumentPreview();
+    const reqId = this.previewRequestId;
+
+    const master = this.ensureMasterBus();
+    const bpb = getBeatsPerBar(timeSignature);
+    const secPerBeat = 60 / Math.max(40, bpm);
+
+    // Find the first bar containing at least 1 note in this stem
+    let barNotes: MidiNote[] = [];
+    let foundBar = -1;
+    for (let bar = 0; bar < section.bars; bar++) {
+      const start = bar * bpb;
+      const end = start + bpb;
+      const inBar = stem.notes.filter((n) => n.startBeat >= start && n.startBeat < end);
+      if (inBar.length > 0) {
+        barNotes = inBar.map((n) => ({ ...n, startBeat: n.startBeat - start }));
+        foundBar = bar;
+        break;
+      }
+    }
+
+    let mode: 'bar' | 'sample' = 'bar';
+    if (barNotes.length === 0) {
+      mode = 'sample';
+      if (entry.isDrum || stem.isDrum) {
+        // 4-hit sample drum groove: Kick, Hat, Snare, Hat
+        barNotes = [
+          { id: 'pv1', midi: 36, startBeat: 0, durationBeats: 0.4, velocity: 0.9 },
+          { id: 'pv2', midi: 42, startBeat: 0.5, durationBeats: 0.3, velocity: 0.7 },
+          { id: 'pv3', midi: 38, startBeat: 1.0, durationBeats: 0.4, velocity: 0.85 },
+          { id: 'pv4', midi: 42, startBeat: 1.5, durationBeats: 0.3, velocity: 0.7 },
+        ];
+      } else {
+        // 3-note musical triad preview in the current bar 1 chord & octave
+        const baseOct = stem.id === '03_Bass' ? 2 : 4;
+        const chord = section.chords[0] ?? { root: section.root, quality: 'min' as const };
+        const voicing = getChordMidiVoicing(chord, baseOct).slice(0, 3);
+        barNotes = voicing.map((midi, idx) => ({
+          id: `pv_${idx}`,
+          midi,
+          startBeat: idx * 0.55,
+          durationBeats: 0.5,
+          velocity: 0.82,
+        }));
+      }
+    }
+
+    const outVol = new Tone.Volume(-3).connect(master);
+
+    const sampler = await new Promise<Tone.Sampler>((resolve, reject) => {
+      const s = new Tone.Sampler({
+        urls: entry.sampleUrls,
+        attack: entry.attackSec,
+        release: entry.releaseSec,
+        onload: () => resolve(s),
+        onerror: (err) => reject(err),
+      }).connect(outVol);
+    });
+
+    if (reqId !== this.previewRequestId) {
+      sampler.dispose();
+      outVol.dispose();
+      return { mode, barNumber: foundBar >= 0 ? foundBar + 1 : undefined };
+    }
+
+    const now = Tone.now() + 0.04;
+    let maxEndSec = 0;
+    for (const note of barNotes) {
+      const startSec = note.startBeat * secPerBeat;
+      const durSec = Math.max(0.08, Math.min(2.5, note.durationBeats * secPerBeat));
+      sampler.triggerAttackRelease(midiToNoteName(note.midi), durSec, now + startSec, note.velocity);
+      maxEndSec = Math.max(maxEndSec, startSec + durSec);
+    }
+
+    const cleanupTimer = window.setTimeout(() => {
+      if (reqId === this.previewRequestId) {
+        this.stopInstrumentPreview();
+      }
+    }, Math.round((maxEndSec + 1.4) * 1000));
+
+    this.activePreviewCleanup = () => {
+      window.clearTimeout(cleanupTimer);
+      try {
+        sampler.releaseAll();
+        sampler.dispose();
+        outVol.dispose();
+      } catch {
+        // ignore disposal races
+      }
+    };
+
+    return { mode, barNumber: foundBar >= 0 ? foundBar + 1 : undefined };
   }
 }
 
