@@ -85,6 +85,8 @@ interface DawState {
   isPlaying: boolean;
   isRecording: boolean;
   audioUnlocked: boolean;
+  masterVolumeDb: number; // -40..+4
+  masterMuted: boolean;
 
   // Piano roll & theory tools
   tool: DrawingTool;
@@ -161,6 +163,8 @@ interface DawState {
   stopPlayback: () => void;
   toggleRecord: () => void;
   markAudioUnlocked: () => void;
+  setMasterVolume: (volumeDb: number) => void;
+  toggleMasterMute: () => void;
 
   // Chords & Beginner helpers
   setBarChord: (bar: number, chord: Omit<ChordEvent, 'bar'>) => void;
@@ -221,6 +225,8 @@ export const useDawStore = create<DawState>((set, get) => ({
   isPlaying: false,
   isRecording: false,
   audioUnlocked: false,
+  masterVolumeDb: -2,
+  masterMuted: false,
 
   tool: 'pen',
   quantizeGrid: 0.25,
@@ -612,6 +618,21 @@ export const useDawStore = create<DawState>((set, get) => ({
 
   toggleRecord: () => set((s) => ({ isRecording: !s.isRecording })),
   markAudioUnlocked: () => set({ audioUnlocked: true }),
+
+  setMasterVolume: (volumeDb) => {
+    const clamped = Math.max(-40, Math.min(4, Math.round(volumeDb)));
+    const nextMuted = clamped <= -40;
+    audioEngine.setMasterVolume(clamped, nextMuted);
+    set({ masterVolumeDb: clamped, masterMuted: nextMuted });
+  },
+
+  toggleMasterMute: () => {
+    const { masterVolumeDb, masterMuted } = get();
+    const nextMuted = !masterMuted;
+    const nextDb = !nextMuted && masterVolumeDb <= -40 ? -6 : masterVolumeDb;
+    audioEngine.setMasterVolume(nextDb, nextMuted);
+    set({ masterMuted: nextMuted, masterVolumeDb: nextDb });
+  },
 
   setBarChord: (bar, chord) => {
     const prev = get().project;

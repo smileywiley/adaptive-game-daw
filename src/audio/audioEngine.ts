@@ -38,6 +38,8 @@ class DawAudioEngine {
   private loopBeats = 16;
   private currentBpm = 110;
   private currentBeatsPerBar = 4;
+  private masterVolumeDb = -2;
+  private masterMuted = false;
 
   // Adaptive vertical intensity (null = simulator off, 0..1 = active vertical layering)
   private simulationIntensity: number | null = null;
@@ -54,10 +56,23 @@ class DawAudioEngine {
   private ensureMasterBus(): Tone.Volume {
     if (!this.initialized || !this.masterGain) {
       this.masterLimiter = new Tone.Limiter(-1.5).toDestination();
-      this.masterGain = new Tone.Volume(-2).connect(this.masterLimiter);
+      this.masterGain = new Tone.Volume(this.masterVolumeDb).connect(this.masterLimiter);
+      this.masterGain.mute = this.masterMuted;
       this.initialized = true;
     }
     return this.masterGain;
+  }
+
+  setMasterVolume(volumeDb: number, muted: boolean): void {
+    this.masterVolumeDb = volumeDb;
+    this.masterMuted = muted;
+    if (!this.masterGain) return;
+    if (muted || volumeDb <= -40) {
+      this.masterGain.mute = true;
+    } else {
+      this.masterGain.mute = false;
+      this.masterGain.volume.rampTo(volumeDb, 0.03);
+    }
   }
 
   async ensureStarted(): Promise<boolean> {
