@@ -55,14 +55,26 @@ export const GameSimulatorPanel: React.FC = () => {
   const currentScenario =
     allScenarios.find((sc) => sc.id === selectedScenarioId) ?? BUILT_IN_SCENARIOS[0];
 
-  // Poll transition countdown while simulator panel is open
+  // Poll transition countdown only while simulator is open and transport is playing
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen || !isPlaying) {
+      setTransitionStatus(null);
+      return;
+    }
     const id = window.setInterval(() => {
-      setTransitionStatus(audioEngine.getTransitionStatus());
+      const next = audioEngine.getTransitionStatus();
+      setTransitionStatus((prev) => (!next && !prev ? prev : next));
     }, 80);
     return () => window.clearInterval(id);
-  }, [isOpen]);
+  }, [isOpen, isPlaying]);
+
+  // Stop automated scenario & pass recording if simulator is closed or user hits Stop/Pause
+  useEffect(() => {
+    if (!isOpen || !isPlaying) {
+      if (scenarioPlaying) setScenarioPlaying(false);
+      if (recordingPass) setRecordingPass(false);
+    }
+  }, [isOpen, isPlaying, scenarioPlaying, recordingPass]);
 
   // Prerecorded scenario playback driver
   useEffect(() => {
