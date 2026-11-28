@@ -56,8 +56,8 @@ function parseOpcodes(blockText: string): Record<string, string> {
   const opcodes: Record<string, string> = {};
   // Strip // comments
   const cleaned = blockText.replace(/\/\/[^\n\r]*/g, ' ');
-  // Match opcode=value (handling sample paths that may contain spaces up to next opcode= or end)
-  const regex = /([a-zA-Z0-9_]+)=([^\n\r]+?)(?=\s+[a-zA-Z0-9_]+=|$)/g;
+  // Match opcode=value (handling sample paths that may contain spaces up to next opcode= or end of line)
+  const regex = /([a-zA-Z0-9_]+)=([^\n\r]+?)(?=\s+[a-zA-Z0-9_]+=|\r?\n|$)/g;
   let match: RegExpExecArray | null;
   while ((match = regex.exec(cleaned)) !== null) {
     opcodes[match[1].toLowerCase()] = match[2].trim();
