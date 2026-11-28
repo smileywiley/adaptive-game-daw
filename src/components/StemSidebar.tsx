@@ -1,8 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Trash2, Volume2, VolumeX, Wand2 } from 'lucide-react';
 import { useDawStore } from '../store/useDawStore';
 import { InstrumentPresetId, STEM_ORDER } from '../types/daw';
 import { INSTRUMENT_PRESETS } from '../audio/synthBank';
+import {
+  CustomInstrumentEntry,
+  getCustomInstruments,
+  subscribeCustomInstruments,
+} from '../audio/customInstruments';
 import { STEM_COACHING_TIPS } from '../theory/musicTheory';
 
 export const StemSidebar: React.FC = () => {
@@ -17,8 +22,19 @@ export const StemSidebar: React.FC = () => {
   const autoFillStemFromChords = useDawStore((s) => s.autoFillStemFromChords);
   const clearStemNotes = useDawStore((s) => s.clearStemNotes);
 
+  const [customInstruments, setCustomInstruments] = useState<CustomInstrumentEntry[]>(() =>
+    getCustomInstruments(),
+  );
+
+  useEffect(() => {
+    return subscribeCustomInstruments(() => {
+      setCustomInstruments(getCustomInstruments());
+    });
+  }, []);
+
   const analogInstruments = INSTRUMENT_PRESETS.filter((i) => i.bank === 'Dark Analog / Cyberpunk');
   const retroInstruments = INSTRUMENT_PRESETS.filter((i) => i.bank === 'Retro 16-Bit / GM');
+  const acousticInstruments = INSTRUMENT_PRESETS.filter((i) => i.bank === 'Acoustic / Plucked');
 
   return (
     <aside className="w-64 shrink-0 studio-panel border-r flex flex-col overflow-y-auto select-none">
@@ -125,6 +141,24 @@ export const StemSidebar: React.FC = () => {
                       </option>
                     ))}
                 </optgroup>
+                {!stem.isDrum && (
+                  <optgroup label="Acoustic / Plucked">
+                    {acousticInstruments.map((inst) => (
+                      <option key={inst.id} value={inst.id}>
+                        {inst.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {!stem.isDrum && customInstruments.length > 0 && (
+                  <optgroup label="Custom Imported (.sf2 / .sfz / .wav)">
+                    {customInstruments.map((inst) => (
+                      <option key={inst.id} value={inst.id}>
+                        {inst.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
 
               {/* Volume Slider */}

@@ -1,10 +1,11 @@
 import * as Tone from 'tone';
 import { InstrumentPresetId } from '../types/daw';
+import { createCustomSamplerVoice, getCustomInstrumentById } from './customInstruments';
 
 export interface InstrumentPresetMeta {
   id: InstrumentPresetId;
   name: string;
-  bank: 'Dark Analog / Cyberpunk' | 'Retro 16-Bit / GM';
+  bank: 'Dark Analog / Cyberpunk' | 'Retro 16-Bit / GM' | 'Acoustic / Plucked' | 'Custom Imported';
   isDrum: boolean;
   description: string;
 }
@@ -53,7 +54,7 @@ export const INSTRUMENT_PRESETS: InstrumentPresetMeta[] = [
     isDrum: true,
     description: 'Punchy analog kick, gated snare, metallic hi-hats & perc',
   },
-  // Starter Bank 1: Retro 16-Bit / GM (Phase 1 procedural fallbacks; Phase 3 adds .sf2)
+  // Starter Bank 1: Retro 16-Bit / GM
   {
     id: 'retro_chiptune_lead',
     name: 'Retro Chiptune Lead',
@@ -88,6 +89,28 @@ export const INSTRUMENT_PRESETS: InstrumentPresetMeta[] = [
     bank: 'Retro 16-Bit / GM',
     isDrum: true,
     description: 'Tight lo-fi 16-bit drum kit',
+  },
+  // Acoustic / Plucked Bank (ideal for seamless location instrument swaps!)
+  {
+    id: 'acoustic_guitar',
+    name: 'Acoustic Guitar',
+    bank: 'Acoustic / Plucked',
+    isDrum: false,
+    description: 'Warm nylon/steel plucked acoustic guitar',
+  },
+  {
+    id: 'banjo_pluck',
+    name: 'Banjo Twang',
+    bank: 'Acoustic / Plucked',
+    isDrum: false,
+    description: 'Bright, snappy resonant shack banjo pluck',
+  },
+  {
+    id: 'ukulele_pluck',
+    name: 'Island Ukulele',
+    bank: 'Acoustic / Plucked',
+    isDrum: false,
+    description: 'Light, breezy tropical tiki-bar ukulele pluck',
   },
 ];
 
@@ -201,6 +224,13 @@ export function createInstrumentVoice(
   presetId: InstrumentPresetId,
   destination: Tone.ToneAudioNode,
 ): SynthVoiceWrapper {
+  if (presetId.startsWith('custom:')) {
+    const custom = getCustomInstrumentById(presetId);
+    if (custom) {
+      return createCustomSamplerVoice(presetId, custom, destination);
+    }
+  }
+
   if (presetId === 'industrial_drum_kit' || presetId === 'retro_arcade_drums') {
     return createDrumKitWrapper(presetId, destination);
   }
@@ -308,6 +338,42 @@ export function createInstrumentVoice(
         oscillator: { type: 'sawtooth' },
         envelope: { attack: 0.25, decay: 0.3, sustain: 0.65, release: 0.6 },
       }).connect(filter);
+      break;
+    }
+
+    case 'acoustic_guitar': {
+      const bodyFilter = new Tone.Filter(2100, 'lowpass').connect(output);
+      disposables.push(bodyFilter);
+      synth = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 1,
+        modulationIndex: 2.2,
+        oscillator: { type: 'triangle' },
+        envelope: { attack: 0.004, decay: 0.55, sustain: 0.08, release: 0.45 },
+        modulationEnvelope: { attack: 0.002, decay: 0.18, sustain: 0, release: 0.1 },
+      }).connect(bodyFilter);
+      break;
+    }
+
+    case 'banjo_pluck': {
+      const twang = new Tone.Filter({ frequency: 1950, type: 'peaking', Q: 3.5, gain: 7 }).connect(output);
+      disposables.push(twang);
+      synth = new Tone.PolySynth(Tone.FMSynth, {
+        harmonicity: 3.0,
+        modulationIndex: 6.5,
+        oscillator: { type: 'sawtooth' },
+        envelope: { attack: 0.002, decay: 0.24, sustain: 0.02, release: 0.16 },
+        modulationEnvelope: { attack: 0.001, decay: 0.09, sustain: 0, release: 0.05 },
+      }).connect(twang);
+      break;
+    }
+
+    case 'ukulele_pluck': {
+      const bright = new Tone.Filter(3600, 'lowpass').connect(output);
+      disposables.push(bright);
+      synth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: 'triangle4' },
+        envelope: { attack: 0.003, decay: 0.28, sustain: 0.04, release: 0.22 },
+      }).connect(bright);
       break;
     }
 

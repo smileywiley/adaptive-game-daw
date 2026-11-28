@@ -2,8 +2,10 @@ import React, { useRef } from 'react';
 import {
   Circle,
   Download,
+  FileArchive,
   Gamepad2,
   Music,
+  Music2,
   Pause,
   Play,
   Sparkles,
@@ -44,6 +46,8 @@ export const TransportBar: React.FC = () => {
   const setKeyAndScale = useDawStore((s) => s.setKeyAndScale);
   const setAutoRemap = useDawStore((s) => s.setAutoRemapOnKeyChange);
   const setPresetModalOpen = useDawStore((s) => s.setPresetModalOpen);
+  const setInstrumentModalOpen = useDawStore((s) => s.setInstrumentModalOpen);
+  const setExportModalOpen = useDawStore((s) => s.setExportModalOpen);
   const setSimulatorOpen = useDawStore((s) => s.setSimulatorOpen);
   const setSelectedMidiDeviceId = useDawStore((s) => s.setSelectedMidiDeviceId);
   const undo = useDawStore((s) => s.undo);
@@ -258,6 +262,24 @@ export const TransportBar: React.FC = () => {
           {simulatorEnabled && (
             <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
           )}
+        </button>
+
+        <button
+          onClick={() => setInstrumentModalOpen(true)}
+          className="flex items-center gap-1 px-2 py-1 rounded-md bg-zinc-900 hover:bg-zinc-800 border border-zinc-800 text-cyan-300 text-xs font-medium transition cursor-pointer"
+          title="Import custom .sf2 SoundFonts, .sfz (.zip) instruments, or .wav/.ogg samples"
+        >
+          <Music2 className="w-3.5 h-3.5" />
+          <span>.sf2/.sfz</span>
+        </button>
+
+        <button
+          onClick={() => setExportModalOpen(true)}
+          className="flex items-center gap-1 px-2.5 py-1 rounded-md bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 text-xs font-semibold transition cursor-pointer"
+          title="Export loop-ready .wav stems, .mid files, music_manifest.json & Unity C# scripts (.zip)"
+        >
+          <FileArchive className="w-3.5 h-3.5" />
+          <span>Export</span>
         </button>
 
         {/* Mini USB MIDI Keyboard Indicator */}

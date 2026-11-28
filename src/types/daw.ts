@@ -25,7 +25,7 @@ export type StemId =
   | '04_Percussion'
   | '05_Lead_Melody';
 
-export type InstrumentPresetId =
+export type BuiltInInstrumentPresetId =
   // Dark Analog & Cyberpunk Synth Bank
   | 'carpenter_pulse_bass'
   | 'dystopian_brass_lead'
@@ -33,12 +33,19 @@ export type InstrumentPresetId =
   | 'neon_arp_pluck'
   | 'dark_analog_pad'
   | 'industrial_drum_kit'
-  // Retro / 16-Bit Chiptune & FM Bank (Phase 1 procedural; Phase 3 adds .sf2/.sfz)
+  // Retro / 16-Bit Chiptune & FM Bank
   | 'retro_chiptune_lead'
   | 'retro_fm_bass'
   | 'retro_rpg_strings'
   | 'retro_harp_pluck'
-  | 'retro_arcade_drums';
+  | 'retro_arcade_drums'
+  // Acoustic / Plucked Bank (great for location swaps like Guitar / Banjo / Ukulele)
+  | 'acoustic_guitar'
+  | 'banjo_pluck'
+  | 'ukulele_pluck';
+
+/** Built-in preset ID or dynamically imported custom instrument ID (`custom:...`). */
+export type InstrumentPresetId = BuiltInInstrumentPresetId | `custom:${string}`;
 
 export type DrawingTool = 'pen' | 'arp' | 'select' | 'erase';
 
@@ -90,6 +97,7 @@ export interface SongSection {
   scaleId: ScaleId;
   transitionQuantization?: TransitionQuantization; // defaults to 'next_bar'
   useTransitionFill?: boolean; // optional 1-bar fill bridge before switching
+  keepBeatPosition?: boolean; // Banjo-Kazooie style phase-locked location swap
   chords: ChordEvent[];
   stems: Record<StemId, StemTrack>;
 }

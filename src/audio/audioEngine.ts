@@ -302,7 +302,15 @@ class DawAudioEngine {
       for (const stemId of STEM_ORDER) {
         this.voices[stemId]?.releaseAll();
       }
-      transport.seconds = 0;
+      const nextLoopSec =
+        (fresh.section.bars * getBeatsPerBar(fresh.project.timeSignature) * 60) /
+        fresh.project.bpm;
+      if (fresh.section.keepBeatPosition && nextLoopSec > 0) {
+        // Phase-locked Banjo-Kazooie style swap: stay on the exact same beat!
+        transport.seconds = ((transport.seconds % nextLoopSec) + nextLoopSec) % nextLoopSec;
+      } else {
+        transport.seconds = 0;
+      }
       this.syncProject(fresh.project, fresh.section);
     }, delayMs);
 
