@@ -19,6 +19,7 @@ import {
 import { createBlankProject, createDefaultProject, MOOD_PRESETS } from '../presets/moodPresets';
 import {
   createNoteId,
+  findScaleDegree,
   generateStemPatternForChords,
   getBeatsPerBar,
   getScaleChordOptions,
@@ -534,18 +535,13 @@ export const useDawStore = create<DawState>((set, get) => ({
     const { project, autoRemapOnKeyChange } = get();
     const nextProject = updateActiveSection(project, (sec) => {
       const oldRoot = sec.root;
+      const oldScaleId = sec.scaleId;
       const diatonic = getScaleChordOptions(newRoot, newScaleId);
-      // Re-harmonize chords gently to the new key/scale
-      const nextChords: ChordEvent[] = sec.chords.map((c, idx) => {
-        if (idx === 0) {
-          const home = diatonic[0];
-          return { bar: c.bar, root: home.root, quality: home.quality, romanNumeral: home.romanNumeral, tensionLevel: home.tensionLevel, vibeLabel: home.vibeLabel };
-        }
-        // Keep relative degree if possible
-        const oldInterval = (c.root - oldRoot + 12) % 12;
-        const match =
-          diatonic.find((opt) => ((opt.root - newRoot + 12) % 12) === oldInterval) ??
-          diatonic[idx % diatonic.length];
+
+      // Remap each bar's chord by its exact scale degree (0..6) so switching A -> B -> A is lossless
+      const nextChords: ChordEvent[] = sec.chords.map((c) => {
+        const deg = findScaleDegree(c.root, oldRoot, oldScaleId);
+        const match = diatonic[deg] ?? diatonic[0];
         return {
           bar: c.bar,
           root: match.root,
@@ -563,7 +559,7 @@ export const useDawStore = create<DawState>((set, get) => ({
           if (!stem.isDrum) {
             nextStems[sid] = {
               ...stem,
-              notes: remapNotesToScale(stem.notes, oldRoot, newRoot, newScaleId),
+              notes: remapNotesToScale(stem.notes, oldRoot, oldScaleId, newRoot, newScaleId),
             };
           }
         }

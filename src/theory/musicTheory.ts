@@ -548,23 +548,53 @@ export function generateStemPatternForChords(
 }
 
 /**
- * Non-destructively transposes and snaps existing melodic notes when the user changes
- * key or scale so they can audition different moods without clashing notes.
+ * Finds the 0..6 scale degree index of a pitch class in (root, scaleId).
+ * If the pitch class is outside the scale, returns the nearest scale degree index.
+ */
+export function findScaleDegree(pc: PitchClass, root: PitchClass, scaleId: ScaleId): number {
+  const interval = mod12(pc - root);
+  const intervals = SCALES[scaleId].intervals;
+  const exact = intervals.indexOf(interval);
+  if (exact !== -1) return exact;
+
+  let bestDeg = 0;
+  let bestDist = 99;
+  intervals.forEach((iv, idx) => {
+    const dist = Math.min(Math.abs(iv - interval), 12 - Math.abs(iv - interval));
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestDeg = idx;
+    }
+  });
+  return bestDeg;
+}
+
+/**
+ * Lossless scale-degree remapping when switching key or scale:
+ * Maps each note's exact scale degree (0..6) in (oldRoot, oldScaleId) to the
+ * corresponding degree in (newRoot, newScaleId), so switching Scale A -> B -> A
+ * returns the exact original melody without collapsing notes downward.
  */
 export function remapNotesToScale(
   notes: MidiNote[],
   oldRoot: PitchClass,
+  oldScaleId: ScaleId,
   newRoot: PitchClass,
   newScaleId: ScaleId,
 ): MidiNote[] {
-  // Shortest semitone transposition between roots (-6..+6)
+  // Shortest semitone shift between roots (-6..+6)
   let delta = newRoot - oldRoot;
   if (delta > 6) delta -= 12;
   if (delta < -6) delta += 12;
 
+  const newIntervals = SCALES[newScaleId].intervals;
+
   return notes.map((note) => {
-    const transposed = Math.max(24, Math.min(108, note.midi + delta));
-    const snapped = snapMidiToScale(transposed, newRoot, newScaleId);
-    return { ...note, midi: snapped };
+    const semitonesAboveOldRoot = note.midi - oldRoot;
+    const octave = Math.floor(semitonesAboveOldRoot / 12);
+    const deg = findScaleDegree(mod12(note.midi), oldRoot, oldScaleId);
+    const newRootAnchor = oldRoot + octave * 12 + delta;
+    const mappedMidi = Math.max(24, Math.min(108, newRootAnchor + newIntervals[deg]));
+    return { ...note, midi: mappedMidi };
   });
 }

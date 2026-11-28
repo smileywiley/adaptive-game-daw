@@ -89,14 +89,21 @@ describe('musicTheory engine', () => {
     expect(Math.max(...bass.map((n) => n.startBeat))).toBeLessThan(20);
   });
 
-  it('remaps notes cleanly into a new key and scale without out-of-scale clashes', () => {
+  it('remaps notes losslessly by scale degree so switching Scale A -> B -> A restores the exact song', () => {
+    // C Major melody: C4 (60), D4 (62), E4 (64), G4 (67), B4 (71)
     const original = [
       { id: '1', midi: 60, startBeat: 0, durationBeats: 1, velocity: 0.8 },
-      { id: '2', midi: 64, startBeat: 1, durationBeats: 1, velocity: 0.8 },
-      { id: '3', midi: 67, startBeat: 2, durationBeats: 1, velocity: 0.8 },
+      { id: '2', midi: 62, startBeat: 1, durationBeats: 1, velocity: 0.8 },
+      { id: '3', midi: 64, startBeat: 2, durationBeats: 1, velocity: 0.8 },
+      { id: '4', midi: 67, startBeat: 3, durationBeats: 1, velocity: 0.8 },
+      { id: '5', midi: 71, startBeat: 4, durationBeats: 1, velocity: 0.8 },
     ];
-    const remapped = remapNotesToScale(original, 0, 9, 'phrygian');
-    expect(remapped.every((n) => isPitchInScale(n.midi, 9, 'phrygian'))).toBe(true);
-    expect(midiToNoteName(remapped[0].midi)).toBe('A3');
+    const toPhrygian = remapNotesToScale(original, 0, 'major', 9, 'phrygian');
+    expect(toPhrygian.every((n) => isPitchInScale(n.midi, 9, 'phrygian'))).toBe(true);
+    expect(midiToNoteName(toPhrygian[0].midi)).toBe('A3');
+
+    // Switch back from A Phrygian to C Major: must return exact original MIDI notes!
+    const backToMajor = remapNotesToScale(toPhrygian, 9, 'phrygian', 0, 'major');
+    expect(backToMajor.map((n) => n.midi)).toEqual(original.map((n) => n.midi));
   });
 });
