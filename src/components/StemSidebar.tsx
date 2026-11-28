@@ -150,13 +150,15 @@ export const StemSidebar: React.FC = () => {
                     ))}
                   </optgroup>
                 )}
-                {!stem.isDrum && customInstruments.length > 0 && (
+                {customInstruments.some((inst) => inst.isDrum === stem.isDrum) && (
                   <optgroup label="Custom Imported (.sf2 / .sfz / .wav)">
-                    {customInstruments.map((inst) => (
-                      <option key={inst.id} value={inst.id}>
-                        {inst.name}
-                      </option>
-                    ))}
+                    {customInstruments
+                      .filter((inst) => inst.isDrum === stem.isDrum)
+                      .map((inst) => (
+                        <option key={inst.id} value={inst.id}>
+                          {inst.name}
+                        </option>
+                      ))}
                   </optgroup>
                 )}
               </select>

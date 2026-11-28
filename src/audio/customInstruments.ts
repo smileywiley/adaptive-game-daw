@@ -1,6 +1,6 @@
 import * as Tone from 'tone';
 import JSZip from 'jszip';
-import { InstrumentPresetId } from '../types/daw';
+import { InstrumentPresetId, StemId } from '../types/daw';
 import { midiToNoteName } from '../theory/musicTheory';
 import { parseSfz } from './sfzParser';
 import { parseSf2Buffer, Sf2PresetInfo } from './sf2Parser';
@@ -10,6 +10,7 @@ export interface CustomInstrumentEntry {
   id: `custom:${string}`;
   name: string;
   sourceType: 'sf2' | 'sfz' | 'wav';
+  isDrum: boolean;
   description: string;
   /** Map of note name (e.g. "C4") -> Blob URL for Tone.Sampler */
   sampleUrls: Record<string, string>;
@@ -22,6 +23,49 @@ export interface LoadedSf2Bank {
   fileName: string;
   presets: Sf2PresetInfo[];
   loadPreset: (presetIndex: number) => CustomInstrumentEntry | null;
+}
+
+export type StemCompatibility = 'ideal' | 'compatible' | 'incompatible';
+
+/** Detects whether a SoundFont/SFZ preset is a drum/percussion kit (GM Bank 128 or drum name). */
+export function isDrumPresetMeta(name: string, bank?: number): boolean {
+  if (bank === 128) return true;
+  return /\b(drum|drums|kit|percussion|tr-?808|tr-?909)\b/i.test(name);
+}
+
+/**
+ * Classifies how well an instrument matches the currently selected stem:
+ * - 'incompatible': Drum kit on melodic stem or melodic instrument on Percussion stem
+ * - 'ideal': Matches both type AND stem musical role (e.g. Bass on 03_Bass, Pad/Strings on 01_Ambient_Pad)
+ * - 'compatible': Valid melodic instrument for a melodic stem
+ */
+export function getStemCompatibility(
+  name: string,
+  isDrumInstrument: boolean,
+  stemId: StemId,
+  stemIsDrum: boolean,
+): StemCompatibility {
+  if (stemIsDrum) {
+    return isDrumInstrument ? 'ideal' : 'incompatible';
+  }
+  if (isDrumInstrument) {
+    return 'incompatible';
+  }
+
+  const lower = name.toLowerCase();
+  if (stemId === '01_Ambient_Pad' && /(pad|string|choir|voice|organ|warm|atmos|sweep|ensemble)/.test(lower)) {
+    return 'ideal';
+  }
+  if (stemId === '02_Rhythm_Pulse' && /(arp|pluck|harp|guitar|banjo|ukulele|clav|marimba|bell|piano|keys|epiano)/.test(lower)) {
+    return 'ideal';
+  }
+  if (stemId === '03_Bass' && /(bass|sub|tuba|cello|contrabass)/.test(lower)) {
+    return 'ideal';
+  }
+  if (stemId === '05_Lead_Melody' && /(lead|brass|synth|guitar|banjo|ukulele|flute|sax|trumpet|violin|piano|square|saw)/.test(lower)) {
+    return 'ideal';
+  }
+  return 'compatible';
 }
 
 const customInstruments = new Map<string, CustomInstrumentEntry>();
@@ -60,6 +104,7 @@ export function importOneShotSampleFile(file: File, rootMidi = 60): CustomInstru
     id,
     name: cleanName,
     sourceType: 'wav',
+    isDrum: isDrumPresetMeta(cleanName),
     description: `Imported audio sample (${file.name})`,
     sampleUrls: { [midiToNoteName(rootMidi)]: url },
     attackSec: 0.005,
@@ -129,6 +174,7 @@ export async function importSfzZipFile(zipFile: File): Promise<CustomInstrumentE
     id,
     name: parsed.name,
     sourceType: 'sfz',
+    isDrum: isDrumPresetMeta(parsed.name),
     description: `SFZ (${Object.keys(sampleUrls).length} sample zones)`,
     sampleUrls,
     attackSec: parsed.regions[0]?.ampegAttack ?? 0.005,
@@ -167,6 +213,7 @@ export async function importSf2File(file: File): Promise<LoadedSf2Bank> {
         id,
         name: `${preset.name} (SF2)`,
         sourceType: 'sf2',
+        isDrum: isDrumPresetMeta(preset.name, preset.bank),
         description: `${file.name} · Bank ${preset.bank} Prog ${preset.preset}`,
         sampleUrls,
         attackSec: 0.005,
@@ -179,7 +226,6 @@ export async function importSf2File(file: File): Promise<LoadedSf2Bank> {
   };
 
   loadedSf2Banks.push(bank);
-  // Auto-load the first preset so it's immediately selectable
   if (parsed.presets.length > 0) {
     bank.loadPreset(0);
   }
@@ -202,7 +248,7 @@ export function createCustomSamplerVoice(
 
   return {
     presetId,
-    isDrum: false,
+    isDrum: entry.isDrum,
     output,
     triggerAttackRelease: (midi, durationSec, time, velocity = 0.8) => {
       if (!sampler.loaded) return;
