@@ -11,6 +11,8 @@ import {
   Undo2,
   Upload,
   Usb,
+  Volume2,
+  VolumeX,
 } from 'lucide-react';
 import { useDawStore } from '../store/useDawStore';
 import { NOTE_NAMES, SCALES } from '../theory/musicTheory';
@@ -21,6 +23,8 @@ export const TransportBar: React.FC = () => {
   const section = useDawStore((s) => s.getActiveSection());
   const isPlaying = useDawStore((s) => s.isPlaying);
   const isRecording = useDawStore((s) => s.isRecording);
+  const masterVolumeDb = useDawStore((s) => s.masterVolumeDb);
+  const masterMuted = useDawStore((s) => s.masterMuted);
   const autoRemap = useDawStore((s) => s.autoRemapOnKeyChange);
   const undoCount = useDawStore((s) => s.undoStack.length);
   const midiSupported = useDawStore((s) => s.midiSupported);
@@ -32,6 +36,8 @@ export const TransportBar: React.FC = () => {
   const togglePlay = useDawStore((s) => s.togglePlay);
   const stopPlayback = useDawStore((s) => s.stopPlayback);
   const toggleRecord = useDawStore((s) => s.toggleRecord);
+  const setMasterVolume = useDawStore((s) => s.setMasterVolume);
+  const toggleMasterMute = useDawStore((s) => s.toggleMasterMute);
   const setBpm = useDawStore((s) => s.setBpm);
   const setTimeSignature = useDawStore((s) => s.setTimeSignature);
   const setSectionBars = useDawStore((s) => s.setSectionBars);
@@ -207,8 +213,37 @@ export const TransportBar: React.FC = () => {
         </div>
       </div>
 
-      {/* Right: Simulator Toggle + Mini USB MIDI Status + Undo + JSON Save/Load */}
+      {/* Right: Main Volume + Simulator Toggle + Mini USB MIDI Status + Undo + JSON Save/Load */}
       <div className="flex items-center gap-1.5">
+        {/* Main / Master Volume */}
+        <div
+          className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded-md px-2 py-1"
+          title="Main Output Volume (click speaker to mute)"
+        >
+          <button
+            onClick={toggleMasterMute}
+            className={`cursor-pointer transition ${
+              masterMuted ? 'text-rose-400 hover:text-rose-300' : 'text-zinc-300 hover:text-amber-300'
+            }`}
+            title={masterMuted ? 'Unmute Main Output' : 'Mute Main Output'}
+          >
+            {masterMuted ? <VolumeX className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
+          </button>
+          <input
+            type="range"
+            min={-40}
+            max={4}
+            step={1}
+            value={masterMuted ? -40 : masterVolumeDb}
+            onChange={(e) => setMasterVolume(Number(e.target.value))}
+            className="w-20 h-1 accent-amber-500 cursor-pointer"
+            aria-label="Main Volume"
+          />
+          <span className="text-[10px] font-mono text-zinc-400 w-9 text-right">
+            {masterMuted ? 'MUTE' : `${masterVolumeDb}dB`}
+          </span>
+        </div>
+
         <button
           onClick={() => setSimulatorOpen(!simulatorOpen)}
           className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold transition cursor-pointer ${
