@@ -32,6 +32,7 @@ class DawAudioEngine {
   private masterLimiter: Tone.Limiter | null = null;
   private masterGain: Tone.Volume | null = null;
   private voices: Partial<Record<StemId, SynthVoiceWrapper>> = {};
+  private stingerVoices: Partial<Record<StemId, SynthVoiceWrapper>> = {};
   private previewVoice: Tone.PolySynth | null = null;
   private scheduledEventIds: number[] = [];
   private loopBeats = 16;
@@ -83,6 +84,22 @@ class DawAudioEngine {
     }
     const voice = createInstrumentVoice(presetId, master);
     this.voices[stemId] = voice;
+    return voice;
+  }
+
+  /** Dedicated one-shot voice pool for Stingers & 1-Bar Fill Bridges (never muted by loop mixer). */
+  private getOrCreateStingerVoice(stemId: StemId, presetId: InstrumentPresetId): SynthVoiceWrapper {
+    const master = this.ensureMasterBus();
+    const existing = this.stingerVoices[stemId];
+    if (existing && existing.presetId === presetId) {
+      return existing;
+    }
+    if (existing) {
+      existing.releaseAll();
+      existing.dispose();
+    }
+    const voice = createInstrumentVoice(presetId, master);
+    this.stingerVoices[stemId] = voice;
     return voice;
   }
 
@@ -217,13 +234,13 @@ class DawAudioEngine {
 
   /**
    * Queues a quantized horizontal transition to targetSection using its quantization rule
-   * and optional 1-bar fill bridge.
+   * and optional 1-bar fill bridge. Reads fresh project/section state from onCommit when firing.
    */
   queueSectionTransition(
     project: DawProject,
     currentSection: SongSection,
     targetSection: SongSection,
-    onCommit: () => void,
+    onCommit: () => { project: DawProject; section: SongSection } | null,
   ): void {
     this.cancelPendingTransition();
     const transport = Tone.getTransport();
@@ -245,14 +262,15 @@ class DawAudioEngine {
     const delaySec = beatsUntilBoundary * secPerBeat;
     const useFill = Boolean(targetSection.useTransitionFill);
 
-    // Optional 1-bar fill bridge: fire a punchy percussion fill leading into the new section
+    // Optional 1-bar fill bridge: fire on dedicated stinger drum voice so it punches through even at low intensity
     if (useFill && beatsUntilBoundary >= 1) {
       const drumStem = currentSection.stems['04_Percussion'];
-      const drumVoice = this.getOrCreateVoice('04_Percussion', drumStem.instrumentId);
+      const fillVoice = this.getOrCreateStingerVoice('04_Percussion', drumStem.instrumentId);
+      fillVoice.output.volume.value = drumStem.volumeDb;
       const fillStart = Tone.now() + Math.max(0.02, delaySec - Math.min(delaySec, secPerBeat * 2));
       const steps = 4;
       for (let i = 0; i < steps; i++) {
-        drumVoice.triggerAttackRelease(
+        fillVoice.triggerAttackRelease(
           i === steps - 1 ? 49 : 38,
           0.12,
           fillStart + i * (secPerBeat * 0.5),
@@ -264,10 +282,13 @@ class DawAudioEngine {
     const delayMs = Math.max(20, Math.round(delaySec * 1000));
     const timerId = window.setTimeout(() => {
       this.pendingTransition = null;
-      onCommit();
-      // Reset transport phase cleanly to beat 0 of the new section
+      const fresh = onCommit();
+      if (!fresh) return;
+      for (const stemId of STEM_ORDER) {
+        this.voices[stemId]?.releaseAll();
+      }
       transport.seconds = 0;
-      this.syncProject(project, targetSection);
+      this.syncProject(fresh.project, fresh.section);
     }, delayMs);
 
     this.pendingTransition = {
@@ -279,7 +300,7 @@ class DawAudioEngine {
     };
   }
 
-  /** Plays a one-shot stinger section on top of the active mix without stopping the loop. */
+  /** Plays a one-shot stinger section on dedicated voices without touching the loop's stem mixer. */
   async playStinger(stingerSection: SongSection, bpm: number): Promise<void> {
     await this.ensureStarted();
     const secPerBeat = 60 / bpm;
@@ -288,12 +309,9 @@ class DawAudioEngine {
     for (const stemId of STEM_ORDER) {
       const stem = stingerSection.stems[stemId];
       if (!stem || stem.notes.length === 0) continue;
-      const voice = this.getOrCreateVoice(stemId, stem.instrumentId);
-      // Temporarily ensure stinger voice can speak cleanly
-      if (voice.output.mute) {
-        voice.output.mute = false;
-        voice.output.volume.value = stem.volumeDb;
-      }
+      const voice = this.getOrCreateStingerVoice(stemId, stem.instrumentId);
+      voice.output.mute = false;
+      voice.output.volume.value = stem.volumeDb;
       for (const note of stem.notes) {
         const startTime = now + note.startBeat * secPerBeat;
         const durSec = Math.max(0.08, note.durationBeats * secPerBeat);
@@ -318,6 +336,7 @@ class DawAudioEngine {
     transport.seconds = 0;
     for (const stemId of STEM_ORDER) {
       this.voices[stemId]?.releaseAll();
+      this.stingerVoices[stemId]?.releaseAll();
     }
   }
 

@@ -10,6 +10,7 @@ export const SectionTabsBar: React.FC = () => {
   const setActiveSection = useDawStore((s) => s.setActiveSection);
   const addSection = useDawStore((s) => s.addSection);
   const duplicateActiveSection = useDawStore((s) => s.duplicateActiveSection);
+  const renameSection = useDawStore((s) => s.renameSection);
   const deleteSection = useDawStore((s) => s.deleteSection);
   const setSectionTransitionRule = useDawStore((s) => s.setSectionTransitionRule);
 
@@ -30,6 +31,13 @@ export const SectionTabsBar: React.FC = () => {
     }
   };
 
+  const handleRenameSection = (id: string, currentName: string) => {
+    const next = window.prompt('Rename section:', currentName);
+    if (next && next.trim()) {
+      renameSection(id, next.trim());
+    }
+  };
+
   return (
     <div className="px-3 py-1.5 bg-zinc-950 border-b border-zinc-800 flex flex-wrap items-center justify-between gap-2 select-none">
       {/* Left: Horizontal Section Tabs */}
@@ -46,6 +54,7 @@ export const SectionTabsBar: React.FC = () => {
             <button
               key={sec.id}
               onClick={() => setActiveSection(sec.id)}
+              onDoubleClick={() => handleRenameSection(sec.id, sec.name)}
               className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium border transition cursor-pointer shrink-0 ${
                 isActive
                   ? isStinger
@@ -53,7 +62,7 @@ export const SectionTabsBar: React.FC = () => {
                     : 'bg-cyan-500/20 border-cyan-400/70 text-cyan-200'
                   : 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200 hover:border-zinc-700'
               }`}
-              title={`${sec.name} (${sec.bars} bars · ${isStinger ? 'One-Shot Stinger' : 'Loopable State'})`}
+              title={`${sec.name} (${sec.bars} bars · ${isStinger ? 'One-Shot Stinger' : 'Loopable State'}) — Double-click to rename`}
             >
               {isStinger && <Zap className="w-3 h-3 text-purple-400" />}
               <span>{sec.name}</span>

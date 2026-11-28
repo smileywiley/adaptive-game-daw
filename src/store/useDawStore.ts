@@ -410,9 +410,12 @@ export const useDawStore = create<DawState>((set, get) => ({
 
     audioEngine.queueSectionTransition(project, currentSection, targetSection, () => {
       const latest = get().project;
+      const freshTarget = latest.sections.find((s) => s.id === targetSectionId);
+      if (!freshTarget) return null;
       const nextProject = { ...latest, activeSectionId: targetSectionId };
       saveProjectToStorage(nextProject);
       set({ project: nextProject });
+      return { project: nextProject, section: freshTarget };
     });
   },
 
