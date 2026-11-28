@@ -16,6 +16,7 @@ export const SectionTabsBar: React.FC = () => {
 
   const quant: TransitionQuantization = activeSection.transitionQuantization ?? 'next_bar';
   const useFill = Boolean(activeSection.useTransitionFill);
+  const keepBeat = Boolean(activeSection.keepBeatPosition);
 
   const handleAddLoop = () => {
     const name = window.prompt('New Game State / Section name (e.g. Boss_Phase2, Stealth):', 'Chase');
@@ -108,8 +109,8 @@ export const SectionTabsBar: React.FC = () => {
         )}
       </div>
 
-      {/* Right: Transition Rule & Optional 1-Bar Fill Bridge */}
-      <div className="flex items-center gap-2 text-[11px] shrink-0">
+      {/* Right: Transition Rule, Fill Bridge & Seamless Keep Beat */}
+      <div className="flex items-center gap-2.5 text-[11px] shrink-0">
         <div className="flex items-center gap-1.5 bg-zinc-900 border border-zinc-800 rounded px-2 py-0.5">
           <span className="text-[10px] text-zinc-500 uppercase">Enter On</span>
           <select
@@ -119,6 +120,7 @@ export const SectionTabsBar: React.FC = () => {
                 activeSection.id,
                 e.target.value as TransitionQuantization,
                 useFill,
+                keepBeat,
               )
             }
             className="bg-transparent text-zinc-200 text-[11px] focus:outline-none cursor-pointer"
@@ -133,18 +135,37 @@ export const SectionTabsBar: React.FC = () => {
         </div>
 
         {activeSection.role !== 'stinger' && (
-          <label
-            className="flex items-center gap-1 text-[10px] text-zinc-400 cursor-pointer"
-            title="Play a punchy 1-bar drum fill bridge right before switching into this state"
-          >
-            <input
-              type="checkbox"
-              checked={useFill}
-              onChange={(e) => setSectionTransitionRule(activeSection.id, quant, e.target.checked)}
-              className="accent-amber-500"
-            />
-            1-Bar Fill Bridge
-          </label>
+          <>
+            <label
+              className="flex items-center gap-1 text-[10px] text-zinc-400 cursor-pointer"
+              title="Play a punchy 1-bar drum fill bridge right before switching into this state"
+            >
+              <input
+                type="checkbox"
+                checked={useFill}
+                onChange={(e) =>
+                  setSectionTransitionRule(activeSection.id, quant, e.target.checked, keepBeat)
+                }
+                className="accent-amber-500"
+              />
+              Fill Bridge
+            </label>
+
+            <label
+              className="flex items-center gap-1 text-[10px] text-cyan-300 cursor-pointer"
+              title="Banjo-Kazooie style seamless location swap: keeps the exact current bar & beat instead of restarting at Bar 1"
+            >
+              <input
+                type="checkbox"
+                checked={keepBeat}
+                onChange={(e) =>
+                  setSectionTransitionRule(activeSection.id, quant, useFill, e.target.checked)
+                }
+                className="accent-cyan-400"
+              />
+              Keep Beat
+            </label>
+          </>
         )}
       </div>
     </div>

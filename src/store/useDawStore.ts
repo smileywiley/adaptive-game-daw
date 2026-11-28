@@ -106,6 +106,8 @@ interface DawState {
 
   // UI modals & drawers
   presetModalOpen: boolean;
+  instrumentModalOpen: boolean;
+  exportModalOpen: boolean;
   simulatorOpen: boolean;
 
   // Adaptive Game State Simulator
@@ -121,6 +123,8 @@ interface DawState {
 
   // Actions
   setPresetModalOpen: (open: boolean) => void;
+  setInstrumentModalOpen: (open: boolean) => void;
+  setExportModalOpen: (open: boolean) => void;
   setSimulatorOpen: (open: boolean) => void;
   setSimulatorEnabled: (enabled: boolean) => void;
   setSimIntensity: (intensity: number) => void;
@@ -140,6 +144,7 @@ interface DawState {
     sectionId: string,
     quantization: TransitionQuantization,
     useTransitionFill: boolean,
+    keepBeatPosition?: boolean,
   ) => void;
   requestStateTransition: (targetSectionId: string) => void;
   requestStateTransitionByName: (name: string) => void;
@@ -242,6 +247,8 @@ export const useDawStore = create<DawState>((set, get) => ({
   selectedMidiDeviceId: 'all',
 
   presetModalOpen: false,
+  instrumentModalOpen: false,
+  exportModalOpen: false,
   simulatorOpen: false,
   simulatorEnabled: false,
   simIntensity: 0.75,
@@ -254,7 +261,8 @@ export const useDawStore = create<DawState>((set, get) => ({
   },
 
   setPresetModalOpen: (open) => set({ presetModalOpen: open }),
-
+  setInstrumentModalOpen: (open) => set({ instrumentModalOpen: open }),
+  setExportModalOpen: (open) => set({ exportModalOpen: open }),
   setSimulatorOpen: (open) => set({ simulatorOpen: open }),
 
   setSimulatorEnabled: (enabled) => {
@@ -396,13 +404,18 @@ export const useDawStore = create<DawState>((set, get) => ({
     syncAudio(nextProject);
   },
 
-  setSectionTransitionRule: (sectionId, quantization, useTransitionFill) => {
+  setSectionTransitionRule: (sectionId, quantization, useTransitionFill, keepBeatPosition) => {
     const prev = get().project;
     const nextProject: DawProject = {
       ...prev,
       sections: prev.sections.map((s) =>
         s.id === sectionId
-          ? { ...s, transitionQuantization: quantization, useTransitionFill }
+          ? {
+              ...s,
+              transitionQuantization: quantization,
+              useTransitionFill,
+              keepBeatPosition: keepBeatPosition ?? s.keepBeatPosition,
+            }
           : s,
       ),
     };

@@ -8,6 +8,8 @@ import { PianoRollCanvas } from './components/PianoRollCanvas';
 import { GameSimulatorPanel } from './components/GameSimulatorPanel';
 import { InputDock } from './components/InputDock';
 import { MoodPresetModal } from './components/MoodPresetModal';
+import { InstrumentImportModal } from './components/InstrumentImportModal';
+import { ExportModal } from './components/ExportModal';
 import { useQwertyInput } from './hooks/useQwertyInput';
 import { useMidiInput } from './hooks/useMidiInput';
 
@@ -35,6 +37,8 @@ export const App: React.FC = () => {
 
       <InputDock />
       <MoodPresetModal />
+      <InstrumentImportModal />
+      <ExportModal />
     </div>
   );
 };
