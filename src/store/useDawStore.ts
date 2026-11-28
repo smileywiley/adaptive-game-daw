@@ -289,9 +289,13 @@ export const useDawStore = create<DawState>((set, get) => ({
     while (newChords.length < bars) {
       newChords.push({ ...base.chords[0], bar: newChords.length });
     }
-    const emptyStems = Object.fromEntries(
-      STEM_ORDER.map((sid) => [sid, { ...base.stems[sid], notes: [] }]),
-    ) as SongSection['stems'];
+    const emptyStems: SongSection['stems'] = {
+      '01_Ambient_Pad': { ...base.stems['01_Ambient_Pad'], notes: [] },
+      '02_Rhythm_Pulse': { ...base.stems['02_Rhythm_Pulse'], notes: [] },
+      '03_Bass': { ...base.stems['03_Bass'], notes: [] },
+      '04_Percussion': { ...base.stems['04_Percussion'], notes: [] },
+      '05_Lead_Melody': { ...base.stems['05_Lead_Melody'], notes: [] },
+    };
 
     const newSection: SongSection = {
       id,
@@ -323,15 +327,17 @@ export const useDawStore = create<DawState>((set, get) => ({
     const prev = get().project;
     const base = get().getActiveSection();
     const id = `sec_${Date.now().toString(36)}`;
-    const clonedStems = Object.fromEntries(
-      STEM_ORDER.map((sid) => [
-        sid,
-        {
-          ...base.stems[sid],
-          notes: base.stems[sid].notes.map((n) => ({ ...n, id: createNoteId('dup') })),
-        },
-      ]),
-    ) as SongSection['stems'];
+    const cloneStem = (sid: StemId) => ({
+      ...base.stems[sid],
+      notes: base.stems[sid].notes.map((n) => ({ ...n, id: createNoteId('dup') })),
+    });
+    const clonedStems: SongSection['stems'] = {
+      '01_Ambient_Pad': cloneStem('01_Ambient_Pad'),
+      '02_Rhythm_Pulse': cloneStem('02_Rhythm_Pulse'),
+      '03_Bass': cloneStem('03_Bass'),
+      '04_Percussion': cloneStem('04_Percussion'),
+      '05_Lead_Melody': cloneStem('05_Lead_Melody'),
+    };
 
     const clone: SongSection = {
       ...base,
