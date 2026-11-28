@@ -177,7 +177,11 @@ interface DawState {
   clearStemNotes: (stemId: StemId) => void;
 
   // Stem mixer & vertical intensity
-  setStemInstrument: (stemId: StemId, instrumentId: InstrumentPresetId) => void;
+  setStemInstrument: (
+    stemId: StemId,
+    instrumentId: InstrumentPresetId,
+    applyToAllStates?: boolean,
+  ) => void;
   setStemVolume: (stemId: StemId, volumeDb: number) => void;
   setStemIntensityRange: (stemId: StemId, intensityMin: number, intensityMax?: number) => void;
   toggleStemMute: (stemId: StemId) => void;
@@ -704,15 +708,26 @@ export const useDawStore = create<DawState>((set, get) => ({
     syncAudio(nextProject);
   },
 
-  setStemInstrument: (stemId, instrumentId) => {
+  setStemInstrument: (stemId, instrumentId, applyToAllStates = false) => {
     const prev = get().project;
-    const nextProject = updateActiveSection(prev, (sec) => ({
-      ...sec,
-      stems: {
-        ...sec.stems,
-        [stemId]: { ...sec.stems[stemId], instrumentId },
-      },
-    }));
+    const nextProject: DawProject = applyToAllStates
+      ? {
+          ...prev,
+          sections: prev.sections.map((sec) => ({
+            ...sec,
+            stems: {
+              ...sec.stems,
+              [stemId]: { ...sec.stems[stemId], instrumentId },
+            },
+          })),
+        }
+      : updateActiveSection(prev, (sec) => ({
+          ...sec,
+          stems: {
+            ...sec.stems,
+            [stemId]: { ...sec.stems[stemId], instrumentId },
+          },
+        }));
     saveProjectToStorage(nextProject);
     set({ project: nextProject });
     syncAudio(nextProject);
