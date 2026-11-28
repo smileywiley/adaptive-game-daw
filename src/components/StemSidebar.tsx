@@ -11,6 +11,7 @@ import {
 import { STEM_COACHING_TIPS } from '../theory/musicTheory';
 
 export const StemSidebar: React.FC = () => {
+  const project = useDawStore((s) => s.project);
   const section = useDawStore((s) => s.getActiveSection());
   const activeStemId = useDawStore((s) => s.activeStemId);
   const setActiveStem = useDawStore((s) => s.setActiveStem);
@@ -22,6 +23,7 @@ export const StemSidebar: React.FC = () => {
   const autoFillStemFromChords = useDawStore((s) => s.autoFillStemFromChords);
   const clearStemNotes = useDawStore((s) => s.clearStemNotes);
 
+  const [applyAllStates, setApplyAllStates] = useState(false);
   const [customInstruments, setCustomInstruments] = useState<CustomInstrumentEntry[]>(() =>
     getCustomInstruments(),
   );
@@ -38,16 +40,33 @@ export const StemSidebar: React.FC = () => {
 
   return (
     <aside className="w-64 shrink-0 studio-panel border-r flex flex-col overflow-y-auto select-none">
-      <div className="px-3 py-2 border-b border-zinc-800/80 flex items-center justify-between">
-        <div>
-          <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-300">
-            Vertical Stems
-          </h2>
-          <p className="text-[10px] text-zinc-500">Click a stem to edit &amp; play live</p>
+      <div className="px-3 py-2 border-b border-zinc-800/80 space-y-1.5">
+        <div className="flex items-center justify-between">
+          <div>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-zinc-300">
+              Vertical Stems
+            </h2>
+            <p className="text-[10px] text-zinc-500">Click a stem to edit &amp; play live</p>
+          </div>
+          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">
+            5 Layers
+          </span>
         </div>
-        <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-400">
-          5 Layers
-        </span>
+
+        {project.sections.length > 1 && (
+          <label
+            className="flex items-center gap-1.5 text-[10px] text-zinc-400 hover:text-zinc-200 cursor-pointer"
+            title="When checked, changing a stem’s instrument applies it to all game states at once"
+          >
+            <input
+              type="checkbox"
+              checked={applyAllStates}
+              onChange={(e) => setApplyAllStates(e.target.checked)}
+              className="accent-amber-500"
+            />
+            Apply instrument changes to all states
+          </label>
+        )}
       </div>
 
       <div className="p-2 space-y-2 flex-1">
@@ -120,7 +139,9 @@ export const StemSidebar: React.FC = () => {
               <select
                 value={stem.instrumentId}
                 onClick={(e) => e.stopPropagation()}
-                onChange={(e) => setStemInstrument(stemId, e.target.value as InstrumentPresetId)}
+                onChange={(e) =>
+                  setStemInstrument(stemId, e.target.value as InstrumentPresetId, applyAllStates)
+                }
                 className="w-full mb-2 bg-zinc-950 border border-zinc-800 rounded px-2 py-1 text-[11px] text-zinc-200 focus:outline-none focus:border-amber-500"
               >
                 <optgroup label="Dark Analog / Cyberpunk">

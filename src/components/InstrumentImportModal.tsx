@@ -65,6 +65,7 @@ export const InstrumentImportModal: React.FC = () => {
   const [sf2Banks, setSf2Banks] = useState<LoadedSf2Bank[]>(() => getLoadedSf2Banks());
   const [searchQuery, setSearchQuery] = useState('');
   const [onlyCompatible, setOnlyCompatible] = useState(false);
+  const [applyToAllStates, setApplyToAllStates] = useState(true);
   const [previewingKey, setPreviewingKey] = useState<string | null>(null);
   const [statusMsg, setStatusMsg] = useState<string | null>(null);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -87,6 +88,10 @@ export const InstrumentImportModal: React.FC = () => {
   if (!isOpen) return null;
 
   const query = searchQuery.trim().toLowerCase();
+  const stateScopeLabel =
+    applyToAllStates && project.sections.length > 1
+      ? `all ${project.sections.length} states`
+      : section.name;
 
   const handleFiles = async (files: FileList | null) => {
     if (!files || files.length === 0) return;
@@ -105,16 +110,20 @@ export const InstrumentImportModal: React.FC = () => {
         } else if (lower.endsWith('.zip')) {
           const entry = await importSfzZipFile(file);
           if (entry.isDrum === activeStem.isDrum) {
-            setStemInstrument(activeStemId, entry.id);
-            setStatusMsg(`Imported SFZ "${entry.name}" and assigned to ${activeStem.name}.`);
+            setStemInstrument(activeStemId, entry.id, applyToAllStates);
+            setStatusMsg(
+              `Imported SFZ "${entry.name}" and assigned to ${activeStem.name} (${stateScopeLabel}).`,
+            );
           } else {
             setStatusMsg(`Imported SFZ "${entry.name}" into Custom Instruments.`);
           }
         } else if (lower.endsWith('.wav') || lower.endsWith('.ogg') || lower.endsWith('.mp3')) {
           const entry = importOneShotSampleFile(file);
           if (entry.isDrum === activeStem.isDrum) {
-            setStemInstrument(activeStemId, entry.id);
-            setStatusMsg(`Imported sample "${entry.name}" and assigned to ${activeStem.name}.`);
+            setStemInstrument(activeStemId, entry.id, applyToAllStates);
+            setStatusMsg(
+              `Imported sample "${entry.name}" and assigned to ${activeStem.name} (${stateScopeLabel}).`,
+            );
           } else {
             setStatusMsg(`Imported sample "${entry.name}" (mapped at C4).`);
           }
@@ -171,8 +180,8 @@ export const InstrumentImportModal: React.FC = () => {
       return;
     }
     if (entry.isDrum === activeStem.isDrum) {
-      setStemInstrument(activeStemId, entry.id);
-      setStatusMsg(`Loaded "${entry.name}" onto ${activeStem.name}.`);
+      setStemInstrument(activeStemId, entry.id, applyToAllStates);
+      setStatusMsg(`Loaded "${entry.name}" onto ${activeStem.name} (${stateScopeLabel}).`);
     } else {
       setStatusMsg(
         `Loaded "${entry.name}" (switch to a ${entry.isDrum ? 'Percussion' : 'melodic'} stem to assign it).`,
@@ -288,8 +297,23 @@ export const InstrumentImportModal: React.FC = () => {
                   onChange={(e) => setOnlyCompatible(e.target.checked)}
                   className="accent-emerald-500"
                 />
-                Only compatible with {activeStem.shortLabel}
+                Only compatible
               </label>
+
+              {project.sections.length > 1 && (
+                <label
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-zinc-950 border border-zinc-800 text-xs text-amber-200 cursor-pointer shrink-0"
+                  title="Apply the assigned instrument to this stem across all game states (uncheck for location-specific swaps like Shack Banjo)"
+                >
+                  <input
+                    type="checkbox"
+                    checked={applyToAllStates}
+                    onChange={(e) => setApplyToAllStates(e.target.checked)}
+                    className="accent-amber-500"
+                  />
+                  Apply to all states ({project.sections.length})
+                </label>
+              )}
             </div>
           )}
 
@@ -454,8 +478,10 @@ export const InstrumentImportModal: React.FC = () => {
                         <button
                           disabled={mismatch}
                           onClick={() => {
-                            setStemInstrument(activeStemId, inst.id);
-                            setStatusMsg(`Assigned "${inst.name}" to ${activeStem.name}.`);
+                            setStemInstrument(activeStemId, inst.id, applyToAllStates);
+                            setStatusMsg(
+                              `Assigned "${inst.name}" to ${activeStem.name} (${stateScopeLabel}).`,
+                            );
                           }}
                           className="flex items-center gap-1 px-2.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-35 disabled:cursor-not-allowed border border-zinc-700 text-[11px] text-amber-300 font-medium cursor-pointer shrink-0"
                         >
